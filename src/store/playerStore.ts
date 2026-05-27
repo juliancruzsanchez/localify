@@ -12,6 +12,8 @@ interface PlayerStore {
   volumePct: number;
   shuffleEnabled: boolean;
   repeatMode: RepeatMode;
+  /** Timestamp (Date.now()) of last playTrack call — used to suppress poll flicker. */
+  _lastPlayStartedAt: number;
 
   playTrack: (track: Track, queue?: Track[], index?: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
@@ -24,6 +26,10 @@ interface PlayerStore {
   setPosition: (ms: number) => void;
   setDuration: (ms: number) => void;
   setIsPlaying: (playing: boolean) => void;
+  /** Inserts track immediately after the current queue position. */
+  playAfterCurrent: (track: Track) => void;
+  /** Appends track to the end of the current queue. */
+  addToQueue: (track: Track) => void;
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
@@ -36,6 +42,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   volumePct: 80,
   shuffleEnabled: false,
   repeatMode: "none",
+  _lastPlayStartedAt: 0,
 
   playTrack: async (track, queue = [], index = 0) => {
     try {
@@ -46,6 +53,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         queueIndex: index,
         isPlaying: true,
         positionMs: 0,
+        // Record when this play started so the polling loop can suppress
+        // is_playing sync for 600 ms while the Rust audio loop bootstraps.
+        _lastPlayStartedAt: Date.now(),
       });
     } catch (e) {
       console.error("play_track failed:", e);
@@ -138,4 +148,17 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   setPosition: (ms) => set({ positionMs: ms }),
   setDuration: (ms) => set({ durationMs: ms }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
+
+  playAfterCurrent: (track) => {
+    set((s) => {
+      const newQueue = [...s.queue];
+      const insertAt = s.queueIndex + 1;
+      newQueue.splice(insertAt, 0, track);
+      return { queue: newQueue };
+    });
+  },
+
+  addToQueue: (track) => {
+    set((s) => ({ queue: [...s.queue, track] }));
+  },
 }));

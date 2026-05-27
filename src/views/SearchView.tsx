@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { SearchInput } from "@/components/search/SearchInput";
+import { useSearchParams } from "react-router";
 import { useSearchQuery } from "@/queries/search";
 import { useDebounce } from "@/hooks/useDebounce";
 import { TrackRow } from "@/components/tracks/TrackRow";
@@ -7,7 +6,8 @@ import { AlbumCard } from "@/components/albums/AlbumCard";
 import { ArtistCard } from "@/components/artists/ArtistCard";
 
 export function SearchView() {
-  const [query, setQuery] = useState("");
+  const [searchParams] = useSearchParams();
+  const query = searchParams.get("q") ?? "";
   const debouncedQuery = useDebounce(query, 300);
   const { data: results, isLoading } = useSearchQuery(debouncedQuery);
 
@@ -18,8 +18,10 @@ export function SearchView() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="px-8 py-6">
-        <h1 className="text-3xl font-bold text-white mb-4">Search</h1>
-        <SearchInput value={query} onChange={setQuery} />
+        <h1 className="text-3xl font-bold text-white mb-2">Search</h1>
+        {!query && (
+          <p className="text-[var(--color-text-muted)] text-sm">Use the search bar above to find songs, albums, and artists.</p>
+        )}
       </div>
 
       {isLoading && debouncedQuery && (

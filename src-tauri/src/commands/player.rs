@@ -2,6 +2,7 @@ use tauri::State;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use crate::audio::engine::PlayerCommand;
+use crate::audio::eq::EQ_BANDS_HZ;
 use crate::db::tracks::get_track_by_id;
 use crate::error::{AppError, Result};
 use crate::state::AppState;
@@ -81,4 +82,51 @@ pub async fn get_player_state(state: State<'_, AppState>) -> Result<PlayerState>
         duration_ms: player.duration_ms.load(Ordering::Relaxed),
         current_track_id: player.current_track_id.lock().unwrap().clone(),
     })
+}
+
+// ─── Audio settings ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioSettings {
+    pub eq_enabled:    bool,
+    pub eq_gains:      Vec<f32>,   // 6 values, dB
+    pub eq_bands_hz:   Vec<f32>,   // centre frequencies (read-only, for the UI)
+    pub crossfade_ms:  u32,
+}
+
+#[tauri::command]
+pub async fn get_audio_settings(state: State<'_, AppState>) -> Result<AudioSettings> {
+    let cfg = state.player.eq_config.lock().unwrap();
+    Ok(AudioSettings {
+        eq_enabled:   cfg.enabled,
+        eq_gains:     cfg.gains_db.to_vec(),
+        eq_bands_hz:  EQ_BANDS_HZ.to_vec(),
+        crossfade_ms: cfg.crossfade_ms,
+    })
+}
+
+#[tauri::command]
+pub async fn set_eq_bands(
+    state:   State<'_, AppState>,
+    enabled: bool,
+    gains:   Vec<f32>,
+) -> Result<()> {
+    if gains.len() != 6 {
+        return Err(AppError::InvalidArgument("EQ requires exactly 6 gain values".into()));
+    }
+    let mut cfg = state.player.eq_config.lock().unwrap();
+    cfg.enabled = enabled;
+    for (i, &g) in gains.iter().enumerate() {
+        cfg.gains_db[i] = g.clamp(-12.0, 12.0);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_crossfade(
+    state:       State<'_, AppState>,
+    duration_ms: u32,
+) -> Result<()> {
+    state.player.eq_config.lock().unwrap().crossfade_ms = duration_ms.min(12_000);
+    Ok(())
 }

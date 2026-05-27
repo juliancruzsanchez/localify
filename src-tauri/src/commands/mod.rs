@@ -6,3 +6,5 @@ pub mod artists;
 pub mod playlists;
 pub mod search;
 pub mod artwork;
+pub mod home;
+pub mod liked;

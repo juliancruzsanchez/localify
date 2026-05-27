@@ -1,8 +1,10 @@
-import { Play, Music } from "lucide-react";
+import { Play, Heart } from "lucide-react";
 import { usePlayerStore } from "@/store/playerStore";
+import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
 import { formatTime } from "@/lib/formatTime";
 import { cn } from "@/lib/utils";
 import type { Track } from "@/types";
+import { TrackContextMenu } from "./TrackContextMenu";
 
 interface TrackRowProps {
   track: Track;
@@ -14,12 +16,16 @@ interface TrackRowProps {
 
 export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps) {
   const { playTrack, isPlaying } = usePlayerStore();
+  const isLiked = useIsLiked(track.id);
+  const { mutate: likeTrack } = useLikeTrack();
+  const { mutate: unlikeTrack } = useUnlikeTrack();
 
   const handlePlay = () => {
     playTrack(track, queue, index);
   };
 
   return (
+    <TrackContextMenu track={track} queue={queue} queueIndex={index}>
     <div
       style={style}
       onDoubleClick={handlePlay}
@@ -66,10 +72,28 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
         </span>
       </div>
 
+      {/* Heart / like button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          isLiked ? unlikeTrack(track.id) : likeTrack(track.id);
+        }}
+        aria-label={isLiked ? "Remove from Liked Songs" : "Add to Liked Songs"}
+        className={cn(
+          "w-8 flex items-center justify-center transition-all",
+          isLiked
+            ? "text-[var(--color-accent)] opacity-100"
+            : "text-[var(--color-text-muted)] opacity-0 group-hover:opacity-100 hover:text-white",
+        )}
+      >
+        <Heart size={15} fill={isLiked ? "currentColor" : "none"} />
+      </button>
+
       {/* Duration */}
       <div className="w-12 text-right text-[var(--color-text-muted)]">
         {formatTime(track.duration_secs)}
       </div>
     </div>
+    </TrackContextMenu>
   );
 }

@@ -1,4 +1,4 @@
-import { Home, Music, Disc3, Mic2, ListMusic, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Home, Music, Disc3, Mic2, ListMusic, Settings, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { useUiStore } from "@/store/uiStore";
 import { usePlaylistsQuery } from "@/queries/playlists";
 import { SidebarItem } from "./SidebarItem";
@@ -14,7 +14,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="flex flex-col h-full transition-all duration-200"
+      className="flex flex-col overflow-hidden transition-all duration-200"
       style={{
         width,
         minWidth: width,
@@ -40,14 +40,25 @@ export function Sidebar() {
       {/* Main nav */}
       <nav className="px-2 space-y-1">
         <SidebarItem to="/" icon={<Home size={20} />} label="Home" collapsed={sidebarCollapsed} />
-        <SidebarItem to="/search" icon={<Search size={20} />} label="Search" collapsed={sidebarCollapsed} />
         <SidebarItem to="/songs" icon={<Music size={20} />} label="Songs" collapsed={sidebarCollapsed} />
         <SidebarItem to="/albums" icon={<Disc3 size={20} />} label="Albums" collapsed={sidebarCollapsed} />
         <SidebarItem to="/artists" icon={<Mic2 size={20} />} label="Artists" collapsed={sidebarCollapsed} />
       </nav>
 
+      <SidebarItem to="/settings" icon={<Settings size={20} />} label="Settings" collapsed={sidebarCollapsed} />
+
       {/* Divider */}
       <div className="mx-4 my-3 border-t border-[var(--color-border)]" />
+
+      {/* Liked Songs */}
+      <div className="px-2 mb-1">
+        <SidebarItem
+          to="/liked"
+          icon={<Heart size={20} />}
+          label="Liked Songs"
+          collapsed={sidebarCollapsed}
+        />
+      </div>
 
       {/* Playlists section */}
       <div className="flex-1 overflow-y-auto px-2">

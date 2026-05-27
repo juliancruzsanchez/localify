@@ -1,7 +1,6 @@
 import { useTracksQuery } from "@/queries/tracks";
 import { TrackList } from "@/components/tracks/TrackList";
 import { EmptyLibrary } from "@/components/library/EmptyLibrary";
-import { AddLibraryButton } from "@/components/library/AddLibraryButton";
 
 export function SongsView() {
   const { data: tracks = [], isLoading } = useTracksQuery();
@@ -18,10 +17,7 @@ export function SongsView() {
     <div className="h-full overflow-y-auto">
       <div className="flex items-center justify-between px-8 py-6">
         <h1 className="text-3xl font-bold text-white">Songs</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-[var(--color-text-muted)] text-sm">{tracks.length} tracks</span>
-          <AddLibraryButton />
-        </div>
+        <span className="text-[var(--color-text-muted)] text-sm">{tracks.length} tracks</span>
       </div>
       <TrackList tracks={tracks} />
     </div>

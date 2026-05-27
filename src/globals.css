@@ -15,6 +15,7 @@
     --sidebar-width: 240px;
     --sidebar-collapsed: 64px;
     --player-height: 72px;
+    --topbar-height: 64px;
   }
 
   * {

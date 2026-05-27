@@ -1,5 +1,6 @@
-import { Shuffle, Repeat, Repeat1 } from "lucide-react";
+import { Shuffle, Repeat, Repeat1, ListMusic } from "lucide-react";
 import { usePlayerStore } from "@/store/playerStore";
+import { useUiStore } from "@/store/uiStore";
 import { TrackInfo } from "@/components/player/TrackInfo";
 import { PlayPauseButton } from "@/components/player/PlayPauseButton";
 import { SkipBackButton, SkipForwardButton } from "@/components/player/SkipButton";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 export function NowPlayingBar() {
   const { shuffleEnabled, repeatMode, toggleShuffle, cycleRepeat } = usePlayerStore();
+  const { queueOpen, toggleQueue } = useUiStore();
 
   return (
     <footer
@@ -52,9 +54,20 @@ export function NowPlayingBar() {
         <SeekBar />
       </div>
 
-      {/* Right: Volume */}
-      <div className="flex items-center justify-end w-48">
+      {/* Right: Volume + Queue toggle */}
+      <div className="flex items-center justify-end gap-3 w-48">
         <VolumeSlider />
+        <button
+          onClick={toggleQueue}
+          className={cn(
+            "transition-colors flex-shrink-0",
+            queueOpen ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)] hover:text-white",
+          )}
+          aria-label="Toggle queue"
+          title="Queue"
+        >
+          <ListMusic size={18} />
+        </button>
       </div>
     </footer>
   );
