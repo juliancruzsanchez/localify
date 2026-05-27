@@ -1,8 +1,3 @@
--- ─── PRAGMA ────────────────────────────────────────────────────────────────
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA synchronous = NORMAL;
-
 -- ─── library_paths ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS library_paths (
     id         TEXT PRIMARY KEY NOT NULL,
