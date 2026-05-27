@@ -1,0 +1,75 @@
+import { Play, Music } from "lucide-react";
+import { usePlayerStore } from "@/store/playerStore";
+import { formatTime } from "@/lib/formatTime";
+import { cn } from "@/lib/utils";
+import type { Track } from "@/types";
+
+interface TrackRowProps {
+  track: Track;
+  index: number;
+  queue: Track[];
+  isActive?: boolean;
+  style?: React.CSSProperties;
+}
+
+export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps) {
+  const { playTrack, isPlaying } = usePlayerStore();
+
+  const handlePlay = () => {
+    playTrack(track, queue, index);
+  };
+
+  return (
+    <div
+      style={style}
+      onDoubleClick={handlePlay}
+      className={cn(
+        "group flex items-center gap-3 px-4 py-2 rounded-md text-sm hover:bg-white/5 cursor-default transition-colors",
+        isActive && "bg-white/10",
+      )}
+    >
+      {/* Track number / play indicator */}
+      <div className="w-6 text-right text-[var(--color-text-muted)] flex-shrink-0">
+        <span className="group-hover:hidden">
+          {isActive && isPlaying ? (
+            <span className="text-[var(--color-accent)]">♪</span>
+          ) : (
+            index + 1
+          )}
+        </span>
+        <button
+          onClick={handlePlay}
+          className="hidden group-hover:block text-white"
+          aria-label={`Play ${track.title}`}
+        >
+          <Play size={14} fill="white" />
+        </button>
+      </div>
+
+      {/* Title & artist */}
+      <div className="flex-1 min-w-0">
+        <p className={cn("truncate font-medium", isActive ? "text-[var(--color-accent)]" : "text-white")}>
+          {track.title}
+        </p>
+        <p className="truncate text-xs text-[var(--color-text-muted)]">{track.artist}</p>
+      </div>
+
+      {/* Album */}
+      <div className="hidden md:block flex-1 min-w-0">
+        <p className="truncate text-[var(--color-text-muted)]">{track.album_title ?? "—"}</p>
+      </div>
+
+      {/* Format badge */}
+      <div className="hidden lg:block w-12 text-center">
+        <span className="text-xs text-[var(--color-text-dim)] uppercase">
+          {track.format}
+        </span>
+      </div>
+
+      {/* Duration */}
+      <div className="w-12 text-right text-[var(--color-text-muted)]">
+        {formatTime(track.duration_secs)}
+      </div>
+    </div>
+  );
+}

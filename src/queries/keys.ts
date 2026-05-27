@@ -1,0 +1,15 @@
+export const queryKeys = {
+  tracks: () => ["tracks"] as const,
+  track: (id: string) => ["tracks", id] as const,
+  albums: () => ["albums"] as const,
+  album: (id: string) => ["albums", id] as const,
+  albumTracks: (id: string) => ["albums", id, "tracks"] as const,
+  artists: () => ["artists"] as const,
+  artist: (id: string) => ["artists", id] as const,
+  artistAlbums: (id: string) => ["artists", id, "albums"] as const,
+  playlists: () => ["playlists"] as const,
+  playlist: (id: string) => ["playlists", id] as const,
+  playlistTracks: (id: string) => ["playlists", id, "tracks"] as const,
+  search: (q: string) => ["search", q] as const,
+  libraryPaths: () => ["libraryPaths"] as const,
+};

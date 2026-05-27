@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+
+# Tauri
+src-tauri/target/
+
+# Claude local settings (personal overrides)
+.claude/settings.local.json
