@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   PanResponder,
@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { DownloadButton } from '../components/DownloadButton';
-import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 import { artworkUrl } from '../hooks/useLibrary';
 import { useServer } from '../hooks/useServer';
 import { usePlayerStore } from '../store/playerStore';
@@ -26,7 +26,171 @@ function formatTime(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.lg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: Spacing.lg,
+    },
+    headerBtn: {
+      width: 40,
+      alignItems: 'center',
+    },
+    headerCenter: {
+      flex: 1,
+      alignItems: 'center',
+      gap: 2,
+    },
+    headerContext: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+      fontWeight: '600',
+      letterSpacing: 1.2,
+    },
+    headerTitle: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '700',
+    },
+    artworkWrapper: {
+      alignItems: 'center',
+      marginBottom: Spacing.xl,
+    },
+    artwork: {
+      width: ARTWORK_SIZE,
+      height: ARTWORK_SIZE,
+      borderRadius: Radius.md,
+      backgroundColor: Colors.surfaceElevated,
+    },
+    infoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+      gap: Spacing.sm,
+    },
+    infoText: {
+      flex: 1,
+      gap: 4,
+    },
+    trackTitle: {
+      color: Colors.text,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+    },
+    trackArtist: {
+      color: Colors.textMuted,
+      fontSize: FontSize.base,
+    },
+    likeBtn: {
+      flexShrink: 0,
+      padding: 4,
+    },
+    likedCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: Colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    unlikedCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: Colors.textDim,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scrubber: {
+      marginBottom: Spacing.lg,
+    },
+    progressHitArea: {
+      paddingVertical: 12,
+      justifyContent: 'center',
+    },
+    progressTrack: {
+      height: 4,
+      backgroundColor: Colors.surfaceElevated,
+      borderRadius: 2,
+    },
+    progressFill: {
+      height: 4,
+      backgroundColor: Colors.text,
+      borderRadius: 2,
+    },
+    progressThumb: {
+      position: 'absolute',
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: Colors.text,
+      top: -5,
+      marginLeft: -7,
+    },
+    timeRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 2,
+    },
+    timeText: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+    },
+    controls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: Spacing.xl,
+    },
+    sideCtrl: {
+      width: 44,
+      alignItems: 'center',
+      position: 'relative',
+    },
+    skipCtrl: {
+      padding: Spacing.xs,
+    },
+    playBtn: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: Colors.text,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    activeDot: {
+      position: 'absolute',
+      bottom: -6,
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: Colors.accent,
+    },
+    secondaryControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.md,
+    },
+    secBtn: {
+      padding: Spacing.sm,
+    },
+  }), [Colors]);
+}
+
 export default function NowPlayingModal() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
   const {
@@ -206,162 +370,3 @@ export default function NowPlayingModal() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  headerBtn: {
-    width: 40,
-    alignItems: 'center',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  headerContext: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-  artworkWrapper: {
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  artwork: {
-    width: ARTWORK_SIZE,
-    height: ARTWORK_SIZE,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  infoText: {
-    flex: 1,
-    gap: 4,
-  },
-  trackTitle: {
-    color: Colors.text,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-  },
-  trackArtist: {
-    color: Colors.textMuted,
-    fontSize: FontSize.base,
-  },
-  likeBtn: {
-    flexShrink: 0,
-    padding: 4,
-  },
-  likedCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  unlikedCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: Colors.textDim,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrubber: {
-    marginBottom: Spacing.lg,
-  },
-  progressHitArea: {
-    paddingVertical: 12,
-    justifyContent: 'center',
-  },
-  progressTrack: {
-    height: 4,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: 4,
-    backgroundColor: Colors.text,
-    borderRadius: 2,
-  },
-  progressThumb: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: Colors.text,
-    top: -5,
-    marginLeft: -7,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 2,
-  },
-  timeText: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.xl,
-  },
-  sideCtrl: {
-    width: 44,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  skipCtrl: {
-    padding: Spacing.xs,
-  },
-  playBtn: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: Colors.text,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeDot: {
-    position: 'absolute',
-    bottom: -6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.accent,
-  },
-  secondaryControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-  },
-  secBtn: {
-    padding: Spacing.sm,
-  },
-});

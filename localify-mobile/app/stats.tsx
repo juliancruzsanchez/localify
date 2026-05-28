@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 import { useServerStats } from '../hooks/useLibrary';
 import { useStatsStore } from '../store/statsStore';
 
@@ -20,13 +20,150 @@ function formatMs(ms: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    content: {
+      paddingBottom: Spacing.xl,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: 56,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.md,
+    },
+    backBtn: {
+      width: 36,
+      alignItems: 'center',
+    },
+    backIcon: {
+      color: Colors.text,
+      fontSize: 32,
+      lineHeight: 36,
+    },
+    headerTitle: {
+      color: Colors.text,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+    },
+    cardRow: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      marginBottom: Spacing.lg,
+    },
+    statCard: {
+      flex: 1,
+      backgroundColor: Colors.surfaceElevated,
+      borderRadius: Radius.md,
+      padding: Spacing.md,
+      alignItems: 'center',
+    },
+    statValue: {
+      color: Colors.accent,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+    },
+    statLabel: {
+      color: Colors.textMuted,
+      fontSize: FontSize.xs,
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    statSub: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+      marginTop: 1,
+      textAlign: 'center',
+    },
+    section: {
+      marginBottom: Spacing.lg,
+    },
+    sectionTitle: {
+      color: Colors.text,
+      fontSize: FontSize.lg,
+      fontWeight: '700',
+      paddingHorizontal: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      gap: Spacing.md,
+    },
+    rank: {
+      color: Colors.textDim,
+      fontSize: FontSize.md,
+      fontWeight: '700',
+      width: 22,
+      textAlign: 'center',
+    },
+    rowInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    rowTitle: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '500',
+    },
+    rowMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    rowRight: {
+      alignItems: 'flex-end',
+      gap: 2,
+    },
+    rowCount: {
+      color: Colors.accent,
+      fontSize: FontSize.sm,
+      fontWeight: '700',
+    },
+    rowTime: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+    },
+    empty: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: Spacing.xxl,
+      paddingTop: Spacing.xxl,
+      gap: Spacing.sm,
+    },
+    emptyIcon: {
+      fontSize: 56,
+      marginBottom: Spacing.sm,
+    },
+    emptyTitle: {
+      color: Colors.text,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+    },
+    emptySub: {
+      color: Colors.textMuted,
+      fontSize: FontSize.md,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+  }), [Colors]);
+}
+
 interface StatCardProps {
   label: string;
   value: string;
   sub?: string;
+  styles: ReturnType<typeof useStyles>;
 }
 
-function StatCard({ label, value, sub }: StatCardProps) {
+function StatCard({ label, value, sub, styles }: StatCardProps) {
   return (
     <View style={styles.statCard}>
       <Text style={styles.statValue}>{value}</Text>
@@ -37,6 +174,8 @@ function StatCard({ label, value, sub }: StatCardProps) {
 }
 
 export default function StatsScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { topTracks, topArtists, todayMs, weekMs, allTimeMs, todayCount, history } = useStatsStore();
   const { data: serverStats, isLoading: serverLoading } = useServerStats();
@@ -61,9 +200,9 @@ export default function StatsScreen() {
 
       {/* Overview cards */}
       <View style={styles.cardRow}>
-        <StatCard label="Today" value={formatMs(todayMsVal)} sub={`${playsToday} plays`} />
-        <StatCard label="This week" value={formatMs(weekMsVal)} />
-        <StatCard label="All time" value={formatMs(allTimeMsVal)} sub={`${history.length} plays`} />
+        <StatCard styles={styles} label="Today" value={formatMs(todayMsVal)} sub={`${playsToday} plays`} />
+        <StatCard styles={styles} label="This week" value={formatMs(weekMsVal)} />
+        <StatCard styles={styles} label="All time" value={formatMs(allTimeMsVal)} sub={`${history.length} plays`} />
       </View>
 
       {/* Top tracks */}
@@ -112,11 +251,13 @@ export default function StatsScreen() {
 
           <View style={[styles.cardRow, { paddingHorizontal: Spacing.md }]}>
             <StatCard
+              styles={styles}
               label="Total plays"
               value={serverStats.total_plays.toLocaleString()}
               sub={`${serverStats.unique_tracks} unique tracks`}
             />
             <StatCard
+              styles={styles}
               label="Listened"
               value={formatMs(serverStats.total_listen_ms)}
               sub={`${serverStats.unique_artists} artists`}
@@ -158,136 +299,3 @@ export default function StatsScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    paddingBottom: Spacing.xl,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 56,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  backBtn: {
-    width: 36,
-    alignItems: 'center',
-  },
-  backIcon: {
-    color: Colors.text,
-    fontSize: 32,
-    lineHeight: 36,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-  },
-  cardRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    alignItems: 'center',
-  },
-  statValue: {
-    color: Colors.accent,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-  },
-  statLabel: {
-    color: Colors.textMuted,
-    fontSize: FontSize.xs,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  statSub: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-    marginTop: 1,
-    textAlign: 'center',
-  },
-  section: {
-    marginBottom: Spacing.lg,
-  },
-  sectionTitle: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.md,
-  },
-  rank: {
-    color: Colors.textDim,
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    width: 22,
-    textAlign: 'center',
-  },
-  rowInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  rowTitle: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '500',
-  },
-  rowMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  rowRight: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  rowCount: {
-    color: Colors.accent,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-  rowTime: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-  },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.xxl,
-    paddingTop: Spacing.xxl,
-    gap: Spacing.sm,
-  },
-  emptyIcon: {
-    fontSize: 56,
-    marginBottom: Spacing.sm,
-  },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-  },
-  emptySub: {
-    color: Colors.textMuted,
-    fontSize: FontSize.md,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});

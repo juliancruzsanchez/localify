@@ -1,12 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NowPlayingBar } from '../../components/NowPlayingBar';
-import { Colors, FontSize } from '../../constants/theme';
+import { useColors, FontSize } from '../../constants/theme';
+
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    tabBarWrapper: {
+      backgroundColor: Colors.tabBar,
+    },
+    tabBar: {
+      backgroundColor: Colors.tabBar,
+      borderTopColor: Colors.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      paddingBottom: 20,
+      paddingTop: 8,
+      height: 64,
+    },
+    tabItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 2,
+    },
+    tabLabel: {
+      fontSize: FontSize.xs,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+  }), [Colors]);
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function TabBar({ state, descriptors, navigation }: any) {
+  const styles = useStyles();
+  const Colors = useColors();
+
   return (
     <View style={styles.tabBarWrapper}>
       <NowPlayingBar />
@@ -53,6 +85,8 @@ function TabBar({ state, descriptors, navigation }: any) {
 }
 
 export default function TabLayout() {
+  const Colors = useColors();
+
   return (
     <Tabs
       screenOptions={{
@@ -104,29 +138,3 @@ export default function TabLayout() {
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  tabBarWrapper: {
-    backgroundColor: Colors.tabBar,
-  },
-  tabBar: {
-    backgroundColor: Colors.tabBar,
-    borderTopColor: Colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    paddingBottom: 20,
-    paddingTop: 8,
-    height: 64,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  tabLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-});

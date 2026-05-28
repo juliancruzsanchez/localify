@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { AlbumCard } from '../../components/AlbumCard';
 import { SectionHeader } from '../../components/SectionHeader';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, useLibrarySnapshot, useRecent } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
@@ -25,7 +25,132 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: 'music', label: 'Music' },
 ];
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    content: {
+      paddingTop: 0,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingTop: 56,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.sm,
+      gap: Spacing.sm,
+    },
+    avatarBtn: {
+      flexShrink: 0,
+    },
+    avatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    filterRow: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      alignItems: 'center',
+    },
+    filterChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: Radius.full,
+      backgroundColor: Colors.surfaceElevated,
+    },
+    filterChipActive: {
+      backgroundColor: Colors.accent,
+    },
+    filterChipText: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+    filterChipTextActive: {
+      color: Colors.background,
+    },
+    loader: {
+      marginVertical: Spacing.xl,
+    },
+    recentGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      paddingHorizontal: Spacing.md,
+      gap: Spacing.sm,
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.md,
+    },
+    recentCard: {
+      width: '48%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: Colors.surfaceElevated,
+      borderRadius: Radius.sm,
+      overflow: 'hidden',
+    },
+    recentArtwork: {
+      width: 56,
+      height: 56,
+      flexShrink: 0,
+    },
+    recentTitle: {
+      flex: 1,
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+      paddingHorizontal: 10,
+    },
+    horizontalList: {
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.sm,
+      gap: Spacing.md,
+    },
+    topTrackRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      gap: Spacing.md,
+    },
+    topTrackArtwork: {
+      width: 48,
+      height: 48,
+      borderRadius: Radius.sm,
+      backgroundColor: Colors.surfaceElevated,
+      flexShrink: 0,
+      overflow: 'hidden',
+    },
+    topTrackInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    topTrackTitle: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '500',
+    },
+    topTrackArtist: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    topTrackCount: {
+      color: Colors.accent,
+      fontSize: FontSize.sm,
+      fontWeight: '700',
+    },
+  }), [Colors]);
+}
+
 export default function HomeScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
   const [filter, setFilter] = useState<FilterId>('all');
@@ -175,123 +300,3 @@ export default function HomeScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    paddingTop: 0,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  avatarBtn: {
-    flexShrink: 0,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    alignItems: 'center',
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.accent,
-  },
-  filterChipText: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  filterChipTextActive: {
-    color: Colors.background,
-  },
-  loader: {
-    marginVertical: Spacing.xl,
-  },
-  recentGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: Spacing.md,
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  recentCard: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.sm,
-    overflow: 'hidden',
-  },
-  recentArtwork: {
-    width: 56,
-    height: 56,
-    flexShrink: 0,
-  },
-  recentTitle: {
-    flex: 1,
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    paddingHorizontal: 10,
-  },
-  horizontalList: {
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.md,
-  },
-  topTrackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.md,
-  },
-  topTrackArtwork: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceElevated,
-    flexShrink: 0,
-    overflow: 'hidden',
-  },
-  topTrackInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  topTrackTitle: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '500',
-  },
-  topTrackArtist: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  topTrackCount: {
-    color: Colors.accent,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-});

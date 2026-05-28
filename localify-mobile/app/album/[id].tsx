@@ -1,5 +1,4 @@
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo } from 'react';
 import {
@@ -12,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { TrackRow } from '../../components/TrackRow';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, useAlbum } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
@@ -20,7 +19,96 @@ import { usePlayerStore } from '../../store/playerStore';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const ARTWORK_SIZE = 220;
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: Colors.background,
+    },
+    errorText: {
+      color: Colors.textMuted,
+      fontSize: FontSize.base,
+    },
+    heroContainer: {
+      alignItems: 'center',
+      paddingTop: 100,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.md,
+    },
+    heroArtwork: {
+      width: ARTWORK_SIZE,
+      height: ARTWORK_SIZE,
+      borderRadius: Radius.md,
+      backgroundColor: Colors.surfaceElevated,
+      marginBottom: Spacing.md,
+    },
+    heroTitle: {
+      color: Colors.text,
+      fontSize: FontSize.xxl,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    heroArtist: {
+      color: Colors.textMuted,
+      fontSize: FontSize.md,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    heroMeta: {
+      color: Colors.textDim,
+      fontSize: FontSize.sm,
+      marginTop: 2,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.md,
+      gap: Spacing.lg,
+    },
+    shuffleBtn: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    shuffleIcon: {
+      color: Colors.textMuted,
+      fontSize: 24,
+    },
+    playBtn: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: Colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    playIcon: {
+      color: Colors.background,
+      fontSize: FontSize.xl,
+      marginLeft: 3,
+    },
+    trackList: {
+      marginTop: Spacing.sm,
+    },
+    bottomPad: {
+      height: Spacing.xxl,
+    },
+  }), [Colors]);
+}
+
 export default function AlbumDetailScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { baseUrl } = useServer();
   const router = useRouter();
@@ -116,87 +204,3 @@ export default function AlbumDetailScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-  },
-  errorText: {
-    color: Colors.textMuted,
-    fontSize: FontSize.base,
-  },
-  heroContainer: {
-    alignItems: 'center',
-    paddingTop: 100,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  heroArtwork: {
-    width: ARTWORK_SIZE,
-    height: ARTWORK_SIZE,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceElevated,
-    marginBottom: Spacing.md,
-  },
-  heroTitle: {
-    color: Colors.text,
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  heroArtist: {
-    color: Colors.textMuted,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  heroMeta: {
-    color: Colors.textDim,
-    fontSize: FontSize.sm,
-    marginTop: 2,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    gap: Spacing.lg,
-  },
-  shuffleBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shuffleIcon: {
-    color: Colors.textMuted,
-    fontSize: 24,
-  },
-  playBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: {
-    color: Colors.background,
-    fontSize: FontSize.xl,
-    marginLeft: 3,
-  },
-  trackList: {
-    marginTop: Spacing.sm,
-  },
-  bottomPad: {
-    height: Spacing.xxl,
-  },
-});

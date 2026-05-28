@@ -1,14 +1,91 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 import { artworkUrl } from '../hooks/useLibrary';
 import { useServer } from '../hooks/useServer';
 import { usePlayerStore } from '../store/playerStore';
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      backgroundColor: Colors.surfaceElevated,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: Colors.surface,
+    },
+    progressTrack: {
+      height: 2,
+      backgroundColor: Colors.border,
+      flexDirection: 'row',
+    },
+    progressFill: {
+      height: 2,
+      backgroundColor: Colors.accent,
+    },
+    inner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      gap: Spacing.sm,
+    },
+    trackInfo: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      minWidth: 0,
+    },
+    artwork: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.sm,
+      backgroundColor: Colors.surface,
+      flexShrink: 0,
+    },
+    textBlock: {
+      flex: 1,
+      minWidth: 0,
+    },
+    title: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '600',
+    },
+    artist: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      marginTop: 1,
+    },
+    controls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      flexShrink: 0,
+    },
+    heartBtn: {
+      padding: 4,
+    },
+    ctrlBtn: {
+      padding: 4,
+    },
+    playBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: Colors.text,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  }), [Colors]);
+}
+
 export function NowPlayingBar() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
   const {
@@ -94,75 +171,3 @@ export function NowPlayingBar() {
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: Colors.surfaceElevated,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.surface,
-  },
-  progressTrack: {
-    height: 2,
-    backgroundColor: Colors.border,
-    flexDirection: 'row',
-  },
-  progressFill: {
-    height: 2,
-    backgroundColor: Colors.accent,
-  },
-  inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  trackInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    minWidth: 0,
-  },
-  artwork: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surface,
-    flexShrink: 0,
-  },
-  textBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
-  artist: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginTop: 1,
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flexShrink: 0,
-  },
-  heartBtn: {
-    padding: 4,
-  },
-  ctrlBtn: {
-    padding: 4,
-  },
-  playBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.text,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 import type { TrackSummary } from '../hooks/useLibrary';
 import { DownloadButton } from './DownloadButton';
 
@@ -22,7 +22,73 @@ function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      gap: Spacing.md,
+    },
+    artwork: {
+      width: 48,
+      height: 48,
+      borderRadius: Radius.sm,
+      backgroundColor: Colors.surfaceElevated,
+      flexShrink: 0,
+    },
+    trackNumberBox: {
+      width: 48,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    trackNumber: {
+      color: Colors.textMuted,
+      fontSize: FontSize.base,
+      fontWeight: '600',
+    },
+    trackNumberActive: {
+      color: Colors.accent,
+    },
+    info: {
+      flex: 1,
+      gap: 2,
+    },
+    title: {
+      fontSize: FontSize.md,
+      fontWeight: '500',
+    },
+    artist: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    right: {
+      alignItems: 'flex-end',
+      gap: 4,
+      flexShrink: 0,
+    },
+    duration: {
+      color: Colors.textDim,
+      fontSize: FontSize.sm,
+    },
+    menuBtn: {
+      padding: 2,
+    },
+    menuDots: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+      letterSpacing: 1,
+    },
+  }), [Colors]);
+}
+
 export function TrackRow({ track, artworkUri, trackNumber, isActive, showDownload, onPress, onMenuPress }: Props) {
+  const styles = useStyles();
+  const Colors = useColors();
   const titleColor = isActive ? Colors.accent : Colors.text;
 
   return (
@@ -64,64 +130,3 @@ export function TrackRow({ track, artworkUri, trackNumber, isActive, showDownloa
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.md,
-  },
-  artwork: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceElevated,
-    flexShrink: 0,
-  },
-  trackNumberBox: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  trackNumber: {
-    color: Colors.textMuted,
-    fontSize: FontSize.base,
-    fontWeight: '600',
-  },
-  trackNumberActive: {
-    color: Colors.accent,
-  },
-  info: {
-    flex: 1,
-    gap: 2,
-  },
-  title: {
-    fontSize: FontSize.md,
-    fontWeight: '500',
-  },
-  artist: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  right: {
-    alignItems: 'flex-end',
-    gap: 4,
-    flexShrink: 0,
-  },
-  duration: {
-    color: Colors.textDim,
-    fontSize: FontSize.sm,
-  },
-  menuBtn: {
-    padding: 2,
-  },
-  menuDots: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-    letterSpacing: 1,
-  },
-});

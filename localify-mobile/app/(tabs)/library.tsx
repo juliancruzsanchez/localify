@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { DownloadButton } from '../../components/DownloadButton';
 import { FilterPills, Pill } from '../../components/FilterPills';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, useLibrarySnapshot } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { useDownloadStore } from '../../store/downloadStore';
@@ -34,12 +34,181 @@ type FilterId = 'all' | 'playlists' | 'albums' | 'artists' | 'songs' | 'download
 type ViewMode = 'list' | 'grid';
 
 const GRID_COLS = 3;
-const GRID_PADDING = Spacing.sm; // gridContent paddingHorizontal
-const GRID_GAP = Spacing.sm;     // gap between columns
+const GRID_PADDING = Spacing.sm;
+const GRID_GAP = Spacing.sm;
 const GRID_ITEM_SIZE =
   (Dimensions.get('window').width - GRID_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingTop: 56,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.sm,
+      gap: Spacing.sm,
+    },
+    avatarBtn: {
+      flexShrink: 0,
+    },
+    avatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      color: Colors.text,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+      flex: 1,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      gap: Spacing.md,
+      alignItems: 'center',
+    },
+    sortRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+    },
+    sortBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    sortText: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+    loader: {
+      marginTop: Spacing.xxl,
+    },
+    listContent: {
+      paddingBottom: Spacing.xxl,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 10,
+      gap: Spacing.md,
+    },
+    rowArtwork: {
+      width: 56,
+      height: 56,
+      borderRadius: Radius.sm,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    rowInfo: {
+      flex: 1,
+      gap: 3,
+    },
+    rowTitle: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '500',
+    },
+    rowMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    artistCircle: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    artistInitials: {
+      color: Colors.text,
+      fontSize: FontSize.lg,
+      fontWeight: '700',
+    },
+    trackIconBox: {
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    countText: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.sm,
+    },
+    emptyState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: Spacing.xxl,
+      gap: Spacing.sm,
+    },
+    emptyTitle: {
+      color: Colors.text,
+      fontSize: FontSize.xl,
+      fontWeight: '700',
+      textAlign: 'center',
+      marginTop: Spacing.sm,
+    },
+    emptySubtitle: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      textAlign: 'center',
+      lineHeight: 20,
+    },
+    gridContent: {
+      paddingHorizontal: GRID_PADDING,
+      paddingBottom: Spacing.xxl,
+    },
+    gridRow: {
+      justifyContent: 'flex-start',
+      gap: GRID_GAP,
+      marginBottom: Spacing.md,
+    },
+    gridItem: {
+      width: GRID_ITEM_SIZE,
+      alignItems: 'flex-start',
+    },
+    gridArtwork: {
+      width: GRID_ITEM_SIZE,
+      height: GRID_ITEM_SIZE,
+      borderRadius: Radius.sm,
+      backgroundColor: Colors.surfaceElevated,
+      marginBottom: 6,
+    },
+    gridTitle: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '500',
+    },
+    gridMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.xs,
+      marginTop: 2,
+    },
+  }), [Colors]);
+}
+
 export default function LibraryScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
   const [filter, setFilter] = useState<FilterId>('all');
@@ -305,167 +474,3 @@ export default function LibraryScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  avatarBtn: {
-    flexShrink: 0,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    color: Colors.text,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    flex: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    alignItems: 'center',
-  },
-  sortRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sortText: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  loader: {
-    marginTop: Spacing.xxl,
-  },
-  listContent: {
-    paddingBottom: Spacing.xxl,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
-    gap: Spacing.md,
-  },
-  rowArtwork: {
-    width: 56,
-    height: 56,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  rowInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  rowTitle: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '500',
-  },
-  rowMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  artistCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  artistInitials: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  trackIconBox: {
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countText: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.xxl,
-    gap: Spacing.sm,
-  },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: Spacing.sm,
-  },
-  emptySubtitle: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  gridContent: {
-    paddingHorizontal: GRID_PADDING,
-    paddingBottom: Spacing.xxl,
-  },
-  gridRow: {
-    justifyContent: 'flex-start',
-    gap: GRID_GAP,
-    marginBottom: Spacing.md,
-  },
-  gridItem: {
-    width: GRID_ITEM_SIZE,
-    alignItems: 'flex-start',
-  },
-  gridArtwork: {
-    width: GRID_ITEM_SIZE,
-    height: GRID_ITEM_SIZE,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.surfaceElevated,
-    marginBottom: 6,
-  },
-  gridTitle: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '500',
-  },
-  gridMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.xs,
-    marginTop: 2,
-  },
-});

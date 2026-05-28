@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Colors, FontSize, Spacing } from '../constants/theme';
+import { useColors, FontSize, Spacing } from '../constants/theme';
 
 interface Props {
   title: string;
@@ -8,7 +8,32 @@ interface Props {
   onRightPress?: () => void;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: Spacing.md,
+      paddingTop: Spacing.lg,
+      paddingBottom: Spacing.sm,
+    },
+    title: {
+      color: Colors.text,
+      fontSize: FontSize.lg,
+      fontWeight: '700',
+    },
+    right: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+  }), [Colors]);
+}
+
 export function SectionHeader({ title, rightLabel, onRightPress }: Props) {
+  const styles = useStyles();
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{title}</Text>
@@ -20,24 +45,3 @@ export function SectionHeader({ title, rightLabel, onRightPress }: Props) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
-  },
-  title: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  right: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-});

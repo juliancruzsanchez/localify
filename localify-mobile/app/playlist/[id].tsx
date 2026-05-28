@@ -1,6 +1,5 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,12 +9,85 @@ import {
   View,
 } from 'react-native';
 import { TrackRow } from '../../components/TrackRow';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, usePlaylist } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: Colors.background,
+    },
+    errorText: {
+      color: Colors.textMuted,
+      fontSize: FontSize.base,
+    },
+    header: {
+      paddingTop: 100,
+      paddingBottom: Spacing.xl,
+      paddingHorizontal: Spacing.md,
+      alignItems: 'center',
+      gap: Spacing.sm,
+    },
+    playlistIconContainer: {
+      width: 120,
+      height: 120,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: Radius.md,
+      marginBottom: Spacing.sm,
+    },
+    playlistIcon: {
+      fontSize: 56,
+    },
+    playlistName: {
+      color: Colors.text,
+      fontSize: FontSize.xxl,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    playlistMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.md,
+    },
+    playBtn: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: Colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    playIcon: {
+      color: Colors.background,
+      fontSize: FontSize.xl,
+      marginLeft: 3,
+    },
+    bottomPad: {
+      height: Spacing.xxl,
+    },
+  }), [Colors]);
+}
+
 export default function PlaylistDetailScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { baseUrl } = useServer();
   const { data: playlist, isLoading, error } = usePlaylist(id ?? '');
@@ -85,71 +157,3 @@ export default function PlaylistDetailScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-  },
-  errorText: {
-    color: Colors.textMuted,
-    fontSize: FontSize.base,
-  },
-  header: {
-    paddingTop: 100,
-    paddingBottom: Spacing.xl,
-    paddingHorizontal: Spacing.md,
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  playlistIconContainer: {
-    width: 120,
-    height: 120,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Radius.md,
-    marginBottom: Spacing.sm,
-  },
-  playlistIcon: {
-    fontSize: 56,
-  },
-  playlistName: {
-    color: Colors.text,
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  playlistMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-  },
-  playBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: {
-    color: Colors.background,
-    fontSize: FontSize.xl,
-    marginLeft: 3,
-  },
-  bottomPad: {
-    height: Spacing.xxl,
-  },
-});

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,11 +13,187 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { clearServerUrl, saveServerUrl, useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
+import { BUILT_IN_THEMES, useThemeStore } from '../../store/themeStore';
+
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    content: {
+      paddingBottom: 48,
+    },
+    header: {
+      paddingTop: 56,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.lg,
+    },
+    title: {
+      color: Colors.text,
+      fontSize: FontSize.xxxl,
+      fontWeight: '700',
+    },
+    sectionLabel: {
+      color: Colors.textDim,
+      fontSize: FontSize.xs,
+      fontWeight: '700',
+      letterSpacing: 1.2,
+      paddingHorizontal: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
+    card: {
+      backgroundColor: Colors.surfaceElevated,
+      marginHorizontal: Spacing.md,
+      borderRadius: Radius.md,
+      padding: Spacing.md,
+    },
+    serverRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+    },
+    statusDot: {
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+      flexShrink: 0,
+    },
+    serverLabel: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '600',
+    },
+    serverUrl: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      marginTop: 2,
+    },
+    editChip: {
+      backgroundColor: Colors.surface,
+      paddingHorizontal: 14,
+      paddingVertical: 5,
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      borderColor: Colors.border,
+    },
+    editChipText: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+    inputLabel: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      marginBottom: 2,
+    },
+    input: {
+      backgroundColor: Colors.surface,
+      color: Colors.text,
+      fontSize: FontSize.base,
+      borderRadius: Radius.sm,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderWidth: 1,
+      borderColor: Colors.border,
+    },
+    error: {
+      color: '#ef4444',
+      fontSize: FontSize.sm,
+    },
+    editActions: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      justifyContent: 'flex-end',
+      marginTop: 4,
+    },
+    cancelBtn: {
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      borderColor: Colors.textDim,
+    },
+    cancelBtnText: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+    saveBtn: {
+      backgroundColor: Colors.accent,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.full,
+      minWidth: 100,
+      alignItems: 'center',
+    },
+    saveBtnText: {
+      color: Colors.background,
+      fontSize: FontSize.sm,
+      fontWeight: '700',
+    },
+    destructiveRow: {
+      alignItems: 'center',
+      paddingVertical: Spacing.sm,
+      marginTop: Spacing.xs,
+    },
+    destructiveText: {
+      color: '#ef4444',
+      fontSize: FontSize.sm,
+      fontWeight: '600',
+    },
+    menuCard: {
+      backgroundColor: Colors.surfaceElevated,
+      marginHorizontal: Spacing.md,
+      borderRadius: Radius.md,
+      overflow: 'hidden',
+    },
+    menuRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 14,
+      gap: Spacing.md,
+    },
+    menuRowText: {
+      color: Colors.text,
+      fontSize: FontSize.base,
+      flex: 1,
+    },
+    menuRowMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      marginTop: 2,
+    },
+    themeRow: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.md,
+      flexWrap: 'wrap',
+    },
+    themeSwatch: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
+    themeSwatchActive: {
+      borderColor: Colors.accent,
+    },
+  }), [Colors]);
+}
 
 export default function SettingsScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
   const setBaseUrl = usePlayerStore((s) => s.setBaseUrl);
@@ -25,6 +201,8 @@ export default function SettingsScreen() {
   const [input, setInput] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeThemeId = useThemeStore((s) => s.activeThemeId);
+  const setTheme = useThemeStore((s) => s.setTheme);
 
   useEffect(() => {
     if (baseUrl) setInput(baseUrl.replace(/^https?:\/\//, ''));
@@ -156,6 +334,29 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Appearance */}
+        <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>APPEARANCE</Text>
+        <View style={styles.menuCard}>
+          <View style={styles.themeRow}>
+            {BUILT_IN_THEMES.map((theme) => (
+              <TouchableOpacity
+                key={theme.id}
+                onPress={() => setTheme(theme.id)}
+                activeOpacity={0.75}
+                style={[
+                  styles.themeSwatch,
+                  { backgroundColor: theme.colors.accent },
+                  activeThemeId === theme.id && styles.themeSwatchActive,
+                ]}
+              >
+                {activeThemeId === theme.id && (
+                  <Ionicons name="checkmark" size={20} color={theme.colors.background} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* Listening */}
         <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>LISTENING</Text>
         <View style={styles.menuCard}>
@@ -185,154 +386,3 @@ export default function SettingsScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    paddingBottom: 48,
-  },
-  header: {
-    paddingTop: 56,
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.lg,
-  },
-  title: {
-    color: Colors.text,
-    fontSize: FontSize.xxxl,
-    fontWeight: '700',
-  },
-  sectionLabel: {
-    color: Colors.textDim,
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  card: {
-    backgroundColor: Colors.surfaceElevated,
-    marginHorizontal: Spacing.md,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-  },
-  serverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  statusDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    flexShrink: 0,
-  },
-  serverLabel: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
-  serverUrl: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginTop: 2,
-  },
-  editChip: {
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  editChipText: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  inputLabel: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginBottom: 2,
-  },
-  input: {
-    backgroundColor: Colors.surface,
-    color: Colors.text,
-    fontSize: FontSize.base,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  error: {
-    color: '#ef4444',
-    fontSize: FontSize.sm,
-  },
-  editActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    justifyContent: 'flex-end',
-    marginTop: 4,
-  },
-  cancelBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    borderWidth: 1,
-    borderColor: Colors.textDim,
-  },
-  cancelBtnText: {
-    color: Colors.text,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  saveBtn: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.full,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  saveBtnText: {
-    color: Colors.background,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-  destructiveRow: {
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
-  destructiveText: {
-    color: '#ef4444',
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  menuCard: {
-    backgroundColor: Colors.surfaceElevated,
-    marginHorizontal: Spacing.md,
-    borderRadius: Radius.md,
-    overflow: 'hidden',
-  },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 14,
-    gap: Spacing.md,
-  },
-  menuRowText: {
-    color: Colors.text,
-    fontSize: FontSize.base,
-    flex: 1,
-  },
-  menuRowMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginTop: 2,
-  },
-});
