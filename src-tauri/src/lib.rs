@@ -29,7 +29,7 @@ use commands::playlists::{
     remove_track_from_playlist_cmd, reorder_playlist_track_cmd, set_playlist_cover_cmd,
 };
 use commands::search::search_library;
-use commands::artwork::get_artwork_path;
+use commands::artwork::{get_artwork_path, get_cover_image};
 use commands::home::{get_recently_played, get_genre_mixes};
 use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres};
 use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
@@ -135,6 +135,7 @@ pub fn run() {
             search_library,
             // Artwork
             get_artwork_path,
+            get_cover_image,
             // Home
             get_recently_played,
             get_genre_mixes,

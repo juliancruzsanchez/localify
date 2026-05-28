@@ -13,6 +13,7 @@ import { usePlayerStore } from "@/store/playerStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 import { toAssetUrl } from "@/lib/assetUrl";
+import { useCoverImage } from "@/hooks/useCoverImage";
 import type { Playlist } from "@/types";
 
 function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapsed: boolean }) {
@@ -20,6 +21,7 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
     id: `playlist-${playlist.id}`,
     data: { type: "playlist", playlistId: playlist.id },
   });
+  const coverDataUrl = useCoverImage(playlist.cover_path);
 
   return (
     <PlaylistContextMenu playlist={playlist}>
@@ -29,7 +31,7 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
         title={collapsed ? playlist.name : undefined}
         className={({ isActive }) =>
           cn(
-            "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors truncate",
+            "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors",
             collapsed ? "justify-center" : "",
             isActive
               ? "bg-white/10 text-white"
@@ -39,9 +41,9 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
         }
       >
         <div className="w-8 h-8 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] flex items-center justify-center">
-          {playlist.cover_path ? (
+          {coverDataUrl ? (
             <img
-              src={toAssetUrl(playlist.cover_path)}
+              src={coverDataUrl}
               className="w-full h-full object-cover"
               alt=""
               draggable={false}
@@ -50,7 +52,7 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
             <ListMusic size={14} className="text-[var(--color-text-dim)]" />
           )}
         </div>
-        {!collapsed && <span className="truncate">{playlist.name}</span>}
+        {!collapsed && <span className="truncate leading-tight">{playlist.name}</span>}
       </NavLink>
     </PlaylistContextMenu>
   );

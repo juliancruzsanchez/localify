@@ -13,6 +13,7 @@ import { ListMusic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
+import { useCoverImage } from "@/hooks/useCoverImage";
 import type { Playlist, Track } from "@/types";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -55,15 +56,22 @@ export function PlaylistCover({ playlist, tracks, className }: PlaylistCoverProp
   );
 
   // 1 ── Custom cover set by user
+  const coverDataUrl = useCoverImage(playlist.cover_path);
   if (playlist.cover_path) {
     return (
       <div className={base}>
-        <img
-          src={toAssetUrl(playlist.cover_path)}
-          className="w-full h-full object-cover"
-          alt={playlist.name}
-          draggable={false}
-        />
+        {coverDataUrl ? (
+          <img
+            src={coverDataUrl}
+            className="w-full h-full object-cover"
+            alt={playlist.name}
+            draggable={false}
+          />
+        ) : (
+          <div className="w-full h-full bg-[var(--color-surface-elevated)] flex items-center justify-center">
+            <ListMusic size={24} className="text-[var(--color-text-dim)]" />
+          </div>
+        )}
       </div>
     );
   }
