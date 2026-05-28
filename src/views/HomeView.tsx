@@ -8,6 +8,7 @@ import { useTracksQuery } from "@/queries/tracks";
 import { usePlayerStore } from "@/store/playerStore";
 import { EmptyLibrary } from "@/components/library/EmptyLibrary";
 import { toAssetUrl } from "@/lib/assetUrl";
+import { TrackContextMenu } from "@/components/tracks/TrackContextMenu";
 import type { Album, Artist, Track } from "@/types";
 
 // ─── Greeting ─────────────────────────────────────────────────────────────────
@@ -207,8 +208,11 @@ function MostPlayedCard({ track, queue }: { track: Track; queue: Track[] }) {
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
   const artworkPath = useArtworkUrl(track.artwork_hash);
   const isActive = currentTrack?.id === track.id;
+  const idx = queue.findIndex((t) => t.id === track.id);
+  const queueIndex = idx >= 0 ? idx : 0;
 
   return (
+    <TrackContextMenu track={track} queue={queue} queueIndex={queueIndex}>
     <div
       className="group flex flex-col gap-3 p-3 rounded-lg cursor-pointer transition-colors"
       style={{ background: "transparent" }}
@@ -218,10 +222,7 @@ function MostPlayedCard({ track, queue }: { track: Track; queue: Track[] }) {
       onMouseLeave={(e) =>
         (e.currentTarget.style.background = "transparent")
       }
-      onDoubleClick={() => {
-        const idx = queue.findIndex((t) => t.id === track.id);
-        playTrack(track, queue, idx >= 0 ? idx : 0);
-      }}
+      onDoubleClick={() => playTrack(track, queue, queueIndex)}
     >
       <div className="relative w-full aspect-square rounded-md overflow-hidden bg-[var(--color-surface-elevated)] shadow-lg">
         {artworkPath ? (
@@ -241,8 +242,7 @@ src={toAssetUrl(artworkPath)}
         <button
           onClick={(e) => {
             e.stopPropagation();
-            const idx = queue.findIndex((t) => t.id === track.id);
-            playTrack(track, queue, idx >= 0 ? idx : 0);
+            playTrack(track, queue, queueIndex);
           }}
           className="absolute bottom-2 right-2 w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center shadow-xl opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-200"
           aria-label={`Play ${track.title}`}
@@ -257,6 +257,7 @@ src={toAssetUrl(artworkPath)}
         <p className="text-[var(--color-text-muted)] text-xs truncate">{track.artist}</p>
       </div>
     </div>
+    </TrackContextMenu>
   );
 }
 

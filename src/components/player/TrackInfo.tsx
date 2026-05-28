@@ -4,6 +4,11 @@ import { useUiStore } from "@/store/uiStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { toAssetUrl } from "@/lib/assetUrl";
 
+function formatSampleRate(hz: number | null | undefined): string {
+  if (!hz) return "";
+  return hz >= 1000 ? `${(hz / 1000).toFixed(1)}kHz` : `${hz}Hz`;
+}
+
 export function TrackInfo() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const artworkPath = useArtworkUrl(currentTrack?.artwork_hash);
@@ -20,7 +25,7 @@ export function TrackInfo() {
   }
 
   return (
-    <div className="flex items-center gap-3 min-w-0 w-48">
+    <div className="flex items-center gap-3 min-w-0 w-56">
       {/* Album art with expand toggle */}
       <button
         onClick={() => setAlbumArtExpanded(!albumArtExpanded)}
@@ -50,7 +55,21 @@ export function TrackInfo() {
 
       <div className="min-w-0">
         <p className="text-sm font-medium text-white truncate">{currentTrack.title}</p>
-        <p className="text-xs text-[var(--color-text-muted)] truncate">{currentTrack.artist}</p>
+        <p className="text-xs text-[var(--color-text-muted)] truncate">
+          {currentTrack.artist}
+          {currentTrack.format && (
+            <span className="ml-2 inline-flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block" />
+              <span className="uppercase">{currentTrack.format}</span>
+              {currentTrack.sample_rate && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block" />
+                  <span>{formatSampleRate(currentTrack.sample_rate)}</span>
+                </>
+              )}
+            </span>
+          )}
+        </p>
       </div>
     </div>
   );

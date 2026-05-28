@@ -17,13 +17,17 @@ interface TrackRowProps {
 }
 
 export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps) {
-  const { playTrack, isPlaying } = usePlayerStore();
+  const { playTrack, togglePlayPause, isPlaying, currentTrack } = usePlayerStore();
   const isLiked = useIsLiked(track.id);
   const { mutate: likeTrack } = useLikeTrack();
   const { mutate: unlikeTrack } = useUnlikeTrack();
   const artworkPath = useArtworkUrl(track.artwork_hash);
 
   const handlePlay = () => {
+    if (isActive && isPlaying) {
+      togglePlayPause();
+      return;
+    }
     playTrack(track, queue, index);
   };
 
@@ -31,7 +35,7 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
     <TrackContextMenu track={track} queue={queue} queueIndex={index}>
     <div
       style={style}
-      onDoubleClick={handlePlay}
+      onDoubleClick={() => !(isActive && isPlaying) && playTrack(track, queue, index)}
       className={cn(
         "group flex items-center gap-3 px-4 py-2 rounded-md text-sm hover:bg-white/5 cursor-default transition-colors",
         isActive && "bg-white/10",
