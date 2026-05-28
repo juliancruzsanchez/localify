@@ -1,8 +1,11 @@
-import { Music, ChevronUp, ChevronDown } from "lucide-react";
+import { Music, ChevronUp, ChevronDown, Heart } from "lucide-react";
+import { useNavigate } from "react-router";
 import { usePlayerStore } from "@/store/playerStore";
 import { useUiStore } from "@/store/uiStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { toAssetUrl } from "@/lib/assetUrl";
+import { cn } from "@/lib/utils";
+import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
 
 function formatSampleRate(hz: number | null | undefined): string {
   if (!hz) return "";
@@ -10,9 +13,13 @@ function formatSampleRate(hz: number | null | undefined): string {
 }
 
 export function TrackInfo() {
+  const navigate = useNavigate();
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const artworkPath = useArtworkUrl(currentTrack?.artwork_hash);
   const { albumArtExpanded, setAlbumArtExpanded } = useUiStore();
+  const isLiked = useIsLiked(currentTrack?.id ?? "");
+  const { mutate: likeTrack } = useLikeTrack();
+  const { mutate: unlikeTrack } = useUnlikeTrack();
 
   if (!currentTrack) {
     return (
@@ -53,10 +60,33 @@ export function TrackInfo() {
         </div>
       </button>
 
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-white truncate">{currentTrack.title}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1">
+          <p className="text-sm font-medium text-white truncate">{currentTrack.title}</p>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!currentTrack) return;
+              isLiked ? unlikeTrack(currentTrack.id) : likeTrack(currentTrack.id);
+            }}
+            className={cn(
+              "flex-shrink-0 transition-colors",
+              isLiked
+                ? "text-[var(--color-accent)]"
+                : "text-[var(--color-text-muted)] hover:text-white",
+            )}
+            aria-label={isLiked ? "Remove from Liked Songs" : "Add to Liked Songs"}
+          >
+            <Heart size={12} fill={isLiked ? "currentColor" : "none"} />
+          </button>
+        </div>
         <p className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
-          {currentTrack.artist}
+          <button
+            onClick={(e) => { e.stopPropagation(); if (currentTrack.artist_id) navigate(`/artists/${currentTrack.artist_id}`); }}
+            className="hover:underline hover:text-white cursor-pointer inline"
+          >
+            {currentTrack.artist}
+          </button>
           {currentTrack.format && (
             <>
               <span className="mx-1.5 w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block align-middle" />

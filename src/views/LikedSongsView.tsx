@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
-import { Heart, Play, Shuffle, Music } from "lucide-react";
+import { Heart, Play, Shuffle, Download, Music } from "lucide-react";
+import { useNavigate } from "react-router";
+import { save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { useLikedTracksQuery, useLikedGenresQuery, type LikedTrack } from "@/queries/liked";
 import { usePlayerStore } from "@/store/playerStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
@@ -40,6 +43,7 @@ interface LikedRowProps {
 }
 
 function LikedTrackRow({ track, index, queue, isActive }: LikedRowProps) {
+  const navigate = useNavigate();
   const { playTrack, isPlaying } = usePlayerStore();
   const artworkPath = useArtworkUrl(track.artwork_hash);
 
@@ -92,12 +96,22 @@ function LikedTrackRow({ track, index, queue, isActive }: LikedRowProps) {
           <p className={cn("truncate font-medium", isActive ? "text-[var(--color-accent)]" : "text-white")}>
             {track.title}
           </p>
-          <p className="truncate text-xs text-[var(--color-text-muted)]">{track.artist}</p>
+          <button
+            onClick={(e) => { e.stopPropagation(); if (track.artist_id) navigate(`/artists/${track.artist_id}`); }}
+            className="truncate text-xs text-[var(--color-text-muted)] hover:underline hover:text-white text-left cursor-pointer"
+          >
+            {track.artist}
+          </button>
         </div>
 
         {/* Album */}
         <div className="min-w-0 hidden md:block">
-          <p className="truncate text-[var(--color-text-muted)]">{track.album_title ?? "—"}</p>
+          <button
+            onClick={(e) => { e.stopPropagation(); if (track.album_id) navigate(`/albums/${track.album_id}`); }}
+            className="truncate text-[var(--color-text-muted)] hover:underline hover:text-white text-left cursor-pointer"
+          >
+            {track.album_title ?? "—"}
+          </button>
         </div>
 
         {/* Date added */}
@@ -140,19 +154,65 @@ function GenrePill({ label, active, onClick }: GenrePillProps) {
 
 // ─── Main view ────────────────────────────────────────────────────────────────
 
+type LikedSortKey = "track_number" | "title" | "album_title" | "liked_at" | "duration_secs";
+
+function sortLiked(list: LikedTrack[], key: LikedSortKey, dir: "asc" | "desc"): LikedTrack[] {
+  return [...list].sort((a, b) => {
+    let cmp = 0;
+    switch (key) {
+      case "track_number":
+        cmp = (a.track_number ?? 0) - (b.track_number ?? 0);
+        break;
+      case "title":
+        cmp = a.title.localeCompare(b.title);
+        break;
+      case "album_title":
+        cmp = (a.album_title ?? "").localeCompare(b.album_title ?? "");
+        break;
+      case "liked_at":
+        cmp = a.liked_at - b.liked_at;
+        break;
+      case "duration_secs":
+        cmp = a.duration_secs - b.duration_secs;
+        break;
+    }
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
 export function LikedSongsView() {
   const [activeGenre, setActiveGenre] = useState<string | undefined>();
+  const [sortBy, setSortBy] = useState<LikedSortKey>("liked_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const toggleSort = (key: LikedSortKey) => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir("desc");
+    }
+  };
+
+  const SORT_COLUMNS: { key: LikedSortKey; label: string; className: string; align?: string }[] = [
+    { key: "track_number", label: "#",         className: "text-center" },
+    { key: "title",        label: "Title",     className: "" },
+    { key: "album_title",  label: "Album",     className: "hidden md:block" },
+    { key: "liked_at",     label: "Date added", className: "hidden lg:block" },
+    { key: "duration_secs",label: "Time",      className: "text-right" },
+  ];
 
   const { data: likedTracks = [], isLoading } = useLikedTracksQuery(activeGenre);
   const { data: genres = [] } = useLikedGenresQuery();
   const { playTrack, currentTrack } = usePlayerStore();
 
+  const sortedTracks = useMemo(() => sortLiked(likedTracks, sortBy, sortDir), [likedTracks, sortBy, sortDir]);
   // Cast to plain Track[] for the queue (LikedTrack is a structural superset)
-  const queue = likedTracks as Track[];
+  const queue = sortedTracks as unknown as Track[];
 
   const totalDuration = useMemo(
-    () => likedTracks.reduce((s, t) => s + t.duration_secs, 0),
-    [likedTracks],
+    () => sortedTracks.reduce((s, t) => s + t.duration_secs, 0),
+    [sortedTracks],
   );
 
   const handlePlayAll = () => {
@@ -163,6 +223,15 @@ export function LikedSongsView() {
     if (queue.length === 0) return;
     const shuffled = [...queue].sort(() => Math.random() - 0.5);
     playTrack(shuffled[0], shuffled, 0);
+  };
+
+  const exportM3u8 = async () => {
+    const destPath = await saveFileDialog({
+      defaultPath: "Liked Songs.m3u8",
+      filters: [{ name: "Playlist", extensions: ["m3u8"] }],
+    });
+    if (!destPath) return;
+    await invoke("export_liked_m3u8", { destPath });
   };
 
   const toggleGenre = (genre: string) =>
@@ -216,6 +285,15 @@ export function LikedSongsView() {
         >
           <Shuffle size={28} />
         </button>
+        <button
+          onClick={exportM3u8}
+          disabled={queue.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-[var(--color-text-muted)] hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+          title="Export as M3U8…"
+        >
+          <Download size={16} />
+          Export
+        </button>
       </div>
 
       {/* ── Genre filter pills ─────────────────────────────────────────────── */}
@@ -244,12 +322,23 @@ export function LikedSongsView() {
           className="grid items-center gap-3 px-2 py-2 text-xs text-[var(--color-text-muted)] uppercase tracking-wider border-b border-white/5 mx-4 mb-1"
           style={{ gridTemplateColumns: "28px 40px 1fr 1fr 100px 48px" }}
         >
-          <div className="text-center">#</div>
+          {SORT_COLUMNS.map(({ key, label, className }) => (
+            <button
+              key={key}
+              onClick={() => toggleSort(key)}
+              className={cn(
+                "flex items-center gap-1 transition-colors hover:text-white",
+                sortBy === key ? "text-white" : "",
+                className,
+              )}
+            >
+              {label}
+              {sortBy === key && (
+                <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>
+              )}
+            </button>
+          ))}
           <div />
-          <div>Title</div>
-          <div className="hidden md:block">Album</div>
-          <div className="hidden lg:block">Date added</div>
-          <div className="text-right">Time</div>
         </div>
       )}
 
@@ -277,7 +366,7 @@ export function LikedSongsView() {
             </p>
           </div>
         ) : (
-          likedTracks.map((track, i) => (
+          sortedTracks.map((track, i) => (
             <LikedTrackRow
               key={track.id}
               track={track}

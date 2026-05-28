@@ -1,0 +1,29 @@
+{
+  "id": "com.localify.visualizer",
+  "name": "Visualizer",
+  "version": "1.0.0",
+  "api_version": "1",
+  "description": "Classic WMP-style audio visualizer with multiple psychedelic modes. Click the canvas to cycle modes.",
+  "capabilities": ["ui_components", "player_observe"],
+  "backend": { "kind": "none" },
+  "frontend": { "entry": "dist/index.js" },
+  "permissions": {
+    "network": false,
+    "filesystem": false,
+    "exec_subprocess": false,
+    "read_library_db": false,
+    "write_library_db": false,
+    "player_control": false,
+    "player_observe": true
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "default_mode": {
+        "type": "string",
+        "enum": ["bars", "alchemy", "plasma", "vortex", "radial"],
+        "default": "alchemy"
+      }
+    }
+  }
+}

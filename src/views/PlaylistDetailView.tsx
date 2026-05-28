@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router";
-import { Play, Pencil, Camera, X, Check, Loader2, Download } from "lucide-react";
+import { Play, Shuffle, Pencil, Camera, X, Check, Loader2, Download } from "lucide-react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { usePlaylistQuery, usePlaylistTracksQuery, useReorderPlaylistTrack, useUpdatePlaylist, useSetPlaylistCover } from "@/queries/playlists";
@@ -14,7 +14,7 @@ export function PlaylistDetailView() {
   const { id } = useParams<{ id: string }>();
   const { data: playlist } = usePlaylistQuery(id!);
   const { data: playlistTracks = [] } = usePlaylistTracksQuery(id!);
-  const { playTrack } = usePlayerStore();
+  const { playTrack, shuffleEnabled, toggleShuffle } = usePlayerStore();
 
   const updatePlaylist  = useUpdatePlaylist();
   const setCover        = useSetPlaylistCover();
@@ -224,6 +224,21 @@ export function PlaylistDetailView() {
             className="w-14 h-14 rounded-full bg-[var(--color-accent)] flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
           >
             <Play size={24} fill="black" className="text-black ml-1" />
+          </button>
+          <button
+            onClick={toggleShuffle}
+            className={cn(
+              "relative flex items-center justify-center w-10 h-10 rounded-full transition-colors",
+              shuffleEnabled
+                ? "text-[var(--color-accent)] bg-white/10"
+                : "text-[var(--color-text-muted)] hover:text-white hover:bg-white/5",
+            )}
+            aria-label="Toggle shuffle"
+          >
+            <Shuffle size={22} />
+            {shuffleEnabled && (
+              <span className="absolute -bottom-0.5 w-1 h-1 rounded-full bg-[var(--color-accent)]" />
+            )}
           </button>
           <button
             onClick={exportM3u8}

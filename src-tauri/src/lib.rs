@@ -22,7 +22,7 @@ use commands::player::{
     get_audio_settings, set_eq_bands, set_crossfade,
 };
 use media_control::MediaControlHandle;
-use commands::tracks::{get_tracks, get_track, reveal_in_folder};
+use commands::tracks::{get_tracks, get_track, get_all_genres, reveal_in_folder};
 use commands::albums::{get_albums, get_album, get_album_tracks};
 use commands::artists::{get_artists, get_artist, get_artist_albums};
 use commands::playlists::{
@@ -34,7 +34,7 @@ use commands::playlists::{
 use commands::search::search_library;
 use commands::artwork::{get_artwork_path, get_artwork_data_url, get_cover_image};
 use commands::home::{get_recently_played, get_genre_mixes};
-use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres};
+use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres, export_liked_m3u8};
 use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
 use commands::tags::{get_track_tags, update_track_tags};
 use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device, db_load_device};
@@ -42,6 +42,7 @@ use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_c
 use commands::remote_stream::{remote_stream_start, remote_stream_stop, remote_stream_status};
 use commands::discord_rpc::{discord_rpc_enable, discord_rpc_disable, discord_rpc_get_status};
 use discord_rpc::DiscordRpcHandle;
+use commands::ytdlp::{ytdlp_check, ytdlp_install, ytdlp_search, ytdlp_download};
 use commands::plugins::{
     plugin_list, plugin_install, plugin_uninstall,
     plugin_get_settings, plugin_save_settings,
@@ -143,6 +144,7 @@ pub fn run() {
             // Tracks
             get_tracks,
             get_track,
+            get_all_genres,
             reveal_in_folder,
             // Albums
             get_albums,
@@ -179,6 +181,7 @@ pub fn run() {
             get_liked_track_ids,
             get_liked_tracks,
             get_liked_genres,
+            export_liked_m3u8,
             // Last.fm
             lastfm_authenticate,
             lastfm_now_playing,
@@ -215,6 +218,11 @@ pub fn run() {
             plugin_audio_source_browse_root,
             plugin_audio_source_browse_collection,
             plugin_audio_source_play,
+            // yt-dlp integration
+            ytdlp_check,
+            ytdlp_install,
+            ytdlp_search,
+            ytdlp_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Localify");

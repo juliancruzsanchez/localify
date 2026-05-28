@@ -8,6 +8,7 @@ const mockTrack: Track = {
   title: "Test Song",
   artist: "Test Artist",
   album_artist: null,
+  artist_id: "artist-1",
   album_id: "album-1",
   album_title: "Test Album",
   track_number: 1,

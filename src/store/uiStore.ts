@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { DownloadState } from "@/queries/ytdlp";
 
 interface UiStore {
   sidebarCollapsed: boolean;
@@ -8,6 +9,10 @@ interface UiStore {
   toggleQueue: () => void;
   albumArtExpanded: boolean;
   setAlbumArtExpanded: (v: boolean) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (v: boolean) => void;
+  downloads: Record<string, DownloadState>;
+  setDownload: (videoId: string, state: DownloadState) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -18,4 +23,9 @@ export const useUiStore = create<UiStore>((set) => ({
   toggleQueue: () => set((s) => ({ queueOpen: !s.queueOpen })),
   albumArtExpanded: false,
   setAlbumArtExpanded: (v) => set({ albumArtExpanded: v }),
+  settingsOpen: false,
+  setSettingsOpen: (v) => set({ settingsOpen: v }),
+  downloads: {},
+  setDownload: (videoId, state) =>
+    set((s) => ({ downloads: { ...s.downloads, [videoId]: state } })),
 }));

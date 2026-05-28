@@ -106,10 +106,14 @@ pub async fn resume(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 pub async fn seek(state: State<'_, AppState>, position_ms: u64) -> Result<()> {
     state.player.send(PlayerCommand::Seek { position_ms });
-    // Update the atomic immediately so the polling loop picks up the new
-    // position without having to wait for the decode thread to process the
-    // seek (otherwise the frontend slider snaps back to the old value).
-    state.player.position_ms.store(position_ms as i64, Ordering::Relaxed);
+    // Update wall-clock tracking immediately so get_player_state reflects the
+    // seek position right away, before the decode thread processes the message.
+    let pos_i64 = position_ms as i64;
+    state.player.position_ms.store(pos_i64, Ordering::Relaxed);
+    state.player.wall_start_pos_ms.store(pos_i64, Ordering::Relaxed);
+    if state.player.is_playing.load(Ordering::Relaxed) {
+        *state.player.wall_start_time.lock().unwrap() = Some(std::time::Instant::now());
+    }
     let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
     for hook in state.plugins.player_hooks() {
         let _ = hook.on_seek(&track_id, position_ms).await;
@@ -139,10 +143,24 @@ pub async fn stop_playback(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 pub async fn get_player_state(state: State<'_, AppState>) -> Result<PlayerState> {
     let player = &state.player;
+    // Compute position from the wall clock rather than the decode-ahead atomic,
+    // so the display reflects actual playback position regardless of buffer depth.
+    let position_ms = {
+        let wt = player.wall_start_time.lock().unwrap();
+        match *wt {
+            Some(t) => {
+                let elapsed = t.elapsed().as_millis() as i64;
+                let start   = player.wall_start_pos_ms.load(Ordering::Relaxed);
+                let dur     = player.duration_ms.load(Ordering::Relaxed);
+                (start + elapsed).min(dur).max(0)
+            }
+            None => player.wall_start_pos_ms.load(Ordering::Relaxed).max(0),
+        }
+    };
     Ok(PlayerState {
         is_playing: player.is_playing.load(Ordering::Relaxed),
         volume: player.volume.load(Ordering::Relaxed) as u8,
-        position_ms: player.position_ms.load(Ordering::Relaxed),
+        position_ms,
         duration_ms: player.duration_ms.load(Ordering::Relaxed),
         current_track_id: player.current_track_id.lock().unwrap().clone(),
     })

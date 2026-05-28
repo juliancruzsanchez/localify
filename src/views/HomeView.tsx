@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router";
 import { Play, Music, Disc3, Mic2 } from "lucide-react";
+import { Children } from "react";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { useRecentlyPlayedQuery, useGenreMixesQuery, type RecentItem, type GenreMix } from "@/queries/home";
 import { useAlbumsQuery } from "@/queries/albums";
@@ -265,11 +266,12 @@ src={toAssetUrl(artworkPath)}
 
 function HorizontalRow({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className="grid gap-2"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}
-    >
-      {children}
+    <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
+      {Children.map(children, (child) => (
+        <div className="shrink-0" style={{ width: "160px" }}>
+          {child}
+        </div>
+      ))}
     </div>
   );
 }

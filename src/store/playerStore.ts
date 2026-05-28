@@ -119,8 +119,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   seek: async (positionMs) => {
     try {
-      await invoke("seek", { positionMs });
-      set({ positionMs });
+      await invoke("seek", { positionMs: Math.round(positionMs) });
+      set({ positionMs: Math.round(positionMs) });
     } catch (e) {
       console.error("seek failed:", e);
     }

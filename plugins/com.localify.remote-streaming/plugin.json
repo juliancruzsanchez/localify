@@ -1,0 +1,23 @@
+{
+  "id": "com.localify.remote-streaming",
+  "name": "Remote Streaming",
+  "version": "1.0.0",
+  "api_version": "1",
+  "description": "Host an HTTP file server so your library can be streamed from other devices on the network.",
+  "capabilities": ["ui_components"],
+  "backend": { "kind": "none" },
+  "frontend": { "entry": "dist/index.js" },
+  "permissions": {
+    "network": true,
+    "filesystem": false,
+    "exec_subprocess": false,
+    "read_library_db": false,
+    "write_library_db": false,
+    "player_control": false,
+    "player_observe": false
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {}
+  }
+}

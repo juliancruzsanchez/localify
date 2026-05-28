@@ -1,0 +1,29 @@
+{
+  "id": "com.localify.discord-rpc",
+  "name": "Discord Rich Presence",
+  "version": "1.0.0",
+  "api_version": "1",
+  "description": "Shows currently playing track in Discord status",
+  "capabilities": ["ui_components", "player_observe"],
+  "backend": { "kind": "none" },
+  "frontend": { "entry": "dist/index.js" },
+  "permissions": {
+    "network": false,
+    "filesystem": false,
+    "exec_subprocess": false,
+    "read_library_db": false,
+    "write_library_db": false,
+    "player_control": false,
+    "player_observe": true
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show currently playing track in Discord"
+      }
+    }
+  }
+}

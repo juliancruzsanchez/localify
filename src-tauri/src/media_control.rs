@@ -48,6 +48,8 @@ extern "C" {}
 mod platform {
     use crossbeam_channel::{Receiver, Sender};
     use std::path::Path;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use objc2::rc::Retained;
     use objc2::msg_send;
     use objc2::extern_class;
@@ -59,6 +61,11 @@ mod platform {
     use tauri::Emitter;
     use crate::audio::engine::PlayerCommand;
     use super::{MediaControlUpdate, TrackMetadata};
+
+    // MPNowPlayingPlaybackState constants (macOS 10.12.2+)
+    const MP_STATE_PLAYING: u64 = 1;
+    const MP_STATE_PAUSED:  u64 = 2;
+    const MP_STATE_STOPPED: u64 = 3;
 
     // ── MediaPlayer class declarations ─────────────────────────────────────
 
@@ -73,6 +80,10 @@ mod platform {
 
             #[unsafe(method(setNowPlayingInfo:))]
             pub fn setNowPlayingInfo(&self, info: Option<&NSDictionary>);
+
+            // Required on macOS 10.12.2+ for Control Center to show the widget.
+            #[unsafe(method(setPlaybackState:))]
+            pub fn setPlaybackState(&self, state: u64);
         );
     }
 
@@ -126,12 +137,11 @@ mod platform {
     fn setup_remote_commands(
         cmd_tx: Sender<PlayerCommand>,
         app_handle: tauri::AppHandle,
+        is_playing: Arc<AtomicBool>,
     ) {
         let center = MPRemoteCommandCenter::sharedCommandCenter();
 
         // ── Play ───────────────────────────────────────────────────────────
-        center.playCommand().setEnabled(true);
-        let tx = cmd_tx.clone();
         let play_cmd = center.playCommand();
         play_cmd.setEnabled(true);
         let tx = cmd_tx.clone();
@@ -155,12 +165,18 @@ mod platform {
             let _: () = msg_send![&*pause_cmd, addTargetWithHandler: &**block];
         }
 
-        // ── Toggle play/pause (headphone button) ────────────────────────────
+        // ── Toggle play/pause (headphone button) ───────────────────────────
+        // Check the shared is_playing flag so we send the right command.
         let toggle_cmd = center.togglePlayPauseCommand();
         toggle_cmd.setEnabled(true);
         let tx = cmd_tx.clone();
+        let flag = is_playing.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
-            tx.send(PlayerCommand::Pause).ok();
+            if flag.load(Ordering::Relaxed) {
+                tx.send(PlayerCommand::Pause).ok();
+            } else {
+                tx.send(PlayerCommand::Resume).ok();
+            }
             0
         })));
         unsafe {
@@ -206,7 +222,7 @@ mod platform {
         }
     }
 
-    // ── NowPlaying update helpers ──────────────────────────────────────────
+    // ── NowPlaying helpers ─────────────────────────────────────────────────
 
     fn set_dict_value(dict: &NSObject, key: &NSString, value: &NSObject) {
         unsafe {
@@ -214,7 +230,10 @@ mod platform {
         }
     }
 
-    fn build_now_playing_dict(info: &TrackMetadata) -> Retained<NSDictionary> {
+    /// Build a complete NowPlaying dictionary including the playback rate.
+    /// Always includes every field so that `setNowPlayingInfo` (which replaces
+    /// the entire dictionary) never clears title/artist/album/artwork.
+    fn build_now_playing_dict(info: &TrackMetadata, rate: f64) -> Retained<NSDictionary> {
         unsafe {
             let cls = objc2::runtime::AnyClass::get(c"NSMutableDictionary").unwrap();
             let dict: Retained<NSObject> = msg_send![cls, new];
@@ -247,7 +266,7 @@ mod platform {
             set_dict_value(
                 &dict,
                 &NSString::from_str("MPNowPlayingInfoPropertyPlaybackRate"),
-                &NSNumber::new_f64(1.0),
+                &NSNumber::new_f64(rate),
             );
 
             if let Some(ref artwork_file) = info.artwork_file {
@@ -267,6 +286,19 @@ mod platform {
 
             msg_send![&dict, copy]
         }
+    }
+
+    fn set_now_playing(info: &TrackMetadata, rate: f64, state: u64) {
+        let dict   = build_now_playing_dict(info, rate);
+        let center = MPNowPlayingInfoCenter::defaultCenter();
+        center.setNowPlayingInfo(Some(&dict));
+        center.setPlaybackState(state);
+    }
+
+    fn clear_now_playing() {
+        let center = MPNowPlayingInfoCenter::defaultCenter();
+        center.setNowPlayingInfo(None);
+        center.setPlaybackState(MP_STATE_STOPPED);
     }
 
     fn create_media_item_artwork(
@@ -304,37 +336,6 @@ mod platform {
         }
     }
 
-    fn update_now_playing(info: &TrackMetadata) {
-        let dict = build_now_playing_dict(info);
-        let center = MPNowPlayingInfoCenter::defaultCenter();
-        center.setNowPlayingInfo(Some(&dict));
-    }
-
-    fn update_playback_rate(rate: f64, elapsed_ms: u64) {
-        unsafe {
-            let cls = objc2::runtime::AnyClass::get(c"NSMutableDictionary").unwrap();
-            let dict: Retained<NSObject> = msg_send![cls, new];
-            set_dict_value(
-                &dict,
-                &NSString::from_str("MPNowPlayingInfoPropertyPlaybackRate"),
-                &NSNumber::new_f64(rate),
-            );
-            set_dict_value(
-                &dict,
-                &NSString::from_str("MPNowPlayingInfoPropertyElapsedPlaybackTime"),
-                &NSNumber::new_f64(elapsed_ms as f64 / 1000.0),
-            );
-            let dict: Retained<NSDictionary> = msg_send![&dict, copy];
-            let center = MPNowPlayingInfoCenter::defaultCenter();
-            center.setNowPlayingInfo(Some(&dict));
-        }
-    }
-
-    fn clear_now_playing() {
-        let center = MPNowPlayingInfoCenter::defaultCenter();
-        center.setNowPlayingInfo(None);
-    }
-
     // ── MediaControlHandle ─────────────────────────────────────────────────
 
     pub struct MediaControlHandle {
@@ -347,39 +348,50 @@ mod platform {
             update_rx: Receiver<MediaControlUpdate>,
             app_handle: tauri::AppHandle,
         ) -> Self {
-            setup_remote_commands(cmd_tx, app_handle);
+            // Shared flag: togglePlayPauseCommand reads it to decide Pause vs Resume.
+            let is_playing = Arc::new(AtomicBool::new(false));
+            setup_remote_commands(cmd_tx, app_handle, is_playing.clone());
 
             let handle = std::thread::spawn(move || {
+                // Track the current metadata so every update can rebuild the full
+                // NowPlaying dict — setNowPlayingInfo replaces (not merges) the dict.
+                let mut current_info: Option<TrackMetadata> = None;
+
                 for update in &update_rx {
                     match update {
                         MediaControlUpdate::TrackChanged(info) => {
-                            update_now_playing(&info);
+                            is_playing.store(true, Ordering::Relaxed);
+                            set_now_playing(&info, 1.0, MP_STATE_PLAYING);
+                            current_info = Some(info);
                         }
                         MediaControlUpdate::Paused(elapsed) => {
-                            update_playback_rate(0.0, elapsed);
+                            is_playing.store(false, Ordering::Relaxed);
+                            if let Some(ref mut i) = current_info {
+                                i.elapsed_ms = elapsed;
+                                set_now_playing(i, 0.0, MP_STATE_PAUSED);
+                            }
                         }
                         MediaControlUpdate::Resumed(elapsed) => {
-                            update_playback_rate(1.0, elapsed);
+                            is_playing.store(true, Ordering::Relaxed);
+                            if let Some(ref mut i) = current_info {
+                                i.elapsed_ms = elapsed;
+                                set_now_playing(i, 1.0, MP_STATE_PLAYING);
+                            }
                         }
                         MediaControlUpdate::Stopped => {
+                            is_playing.store(false, Ordering::Relaxed);
                             clear_now_playing();
+                            current_info = None;
                         }
                         MediaControlUpdate::Seeked(elapsed) => {
-                            unsafe {
-                                let center = MPNowPlayingInfoCenter::defaultCenter();
-                                let cls =
-                                    objc2::runtime::AnyClass::get(c"NSMutableDictionary")
-                                        .unwrap();
-                                let dict: Retained<NSObject> = msg_send![cls, new];
-                                set_dict_value(
-                                    &dict,
-                                    &NSString::from_str(
-                                        "MPNowPlayingInfoPropertyElapsedPlaybackTime",
-                                    ),
-                                    &NSNumber::new_f64(elapsed as f64 / 1000.0),
-                                );
-                                let dict: Retained<NSDictionary> = msg_send![&dict, copy];
-                                center.setNowPlayingInfo(Some(&dict));
+                            if let Some(ref mut i) = current_info {
+                                i.elapsed_ms = elapsed;
+                                let (rate, state) = if is_playing.load(Ordering::Relaxed) {
+                                    (1.0, MP_STATE_PLAYING)
+                                } else {
+                                    (0.0, MP_STATE_PAUSED)
+                                };
+                                set_now_playing(i, rate, state);
                             }
                         }
                     }

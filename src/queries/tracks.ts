@@ -10,6 +10,14 @@ export function useTracksQuery() {
   });
 }
 
+export function useAllGenresQuery() {
+  return useQuery({
+    queryKey: queryKeys.allGenres(),
+    queryFn: () => invoke<string[]>("get_all_genres"),
+    staleTime: 60_000,
+  });
+}
+
 export function useTrackQuery(id: string) {
   return useQuery({
     queryKey: queryKeys.track(id),

@@ -160,11 +160,11 @@ export function TrackContextMenu({ track, queue, queueIndex, children }: TrackCo
             </MenuItem>
           )}
 
-          {/* Go to Artist — label only; navigates via artist search by name */}
-          {track.artist && (
+          {/* Go to Artist */}
+          {track.artist_id && (
             <MenuItem
               icon={<User size={15} />}
-              onSelect={() => navigate(`/artists`)}
+              onSelect={() => navigate(`/artists/${track.artist_id}`)}
             >
               Go to artist
             </MenuItem>

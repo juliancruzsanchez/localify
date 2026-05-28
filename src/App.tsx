@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { Outlet, useNavigate } from "react-router";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { X } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { NowPlayingBar } from "@/components/layout/NowPlayingBar";
 import { QueuePanel } from "@/components/queue/QueuePanel";
 import { DragOverlayContent } from "@/components/drag/DragOverlay";
+import { SettingsView } from "@/views/SettingsView";
 import { useUiStore } from "@/store/uiStore";
 import { usePlayerStore } from "@/store/playerStore";
 import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
@@ -19,7 +21,7 @@ import type { PlayerState, Track } from "@/types";
 const QUEUE_PANEL_WIDTH = 280;
 
 export default function App() {
-  const { sidebarCollapsed, queueOpen } = useUiStore();
+  const { sidebarCollapsed, queueOpen, settingsOpen, setSettingsOpen } = useUiStore();
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
   const [activeTrack, setActiveTrack] = useState<Track | null>(null);
   const { mutate: addTrackToPlaylist } = useAddTrackToPlaylist();
@@ -30,6 +32,14 @@ export default function App() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
+
+  // Close settings on Escape
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setSettingsOpen(false); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [settingsOpen, setSettingsOpen]);
 
   // Last.fm scrobbling (no-ops when not connected)
   useLastFmScrobbling();
@@ -101,6 +111,7 @@ export default function App() {
           gridTemplateAreas: '"topbar topbar topbar" "sidebar main queue" "player player player"',
           height: "100vh",
           overflow: "hidden",
+          borderRadius: "12px",
           transition: "grid-template-columns 200ms ease",
           columnGap: "8px",
           rowGap: "8px",
@@ -128,6 +139,33 @@ export default function App() {
           {activeTrack ? <DragOverlayContent track={activeTrack} /> : null}
         </DragOverlay>
       </div>
+
+      {/* Settings modal */}
+      {settingsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl h-[80vh] rounded-xl overflow-hidden"
+            style={{
+              background: "var(--color-base)",
+              border: "1px solid var(--color-border)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSettingsOpen(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/40 text-[var(--color-text-muted)] hover:text-white hover:bg-black/60 transition-colors"
+              aria-label="Close settings"
+            >
+              <X size={18} />
+            </button>
+            <SettingsView />
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 }

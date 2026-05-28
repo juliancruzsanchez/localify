@@ -1,4 +1,4 @@
-import { Home, Music, Disc3, Mic2, ListMusic, Heart, ChevronLeft, ChevronRight, Plus, ChevronDown, Loader2 } from "lucide-react";
+import { Home, Music, Disc3, Mic2, ListMusic, Heart, Plus, ChevronLeft, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { useUiStore } from "@/store/uiStore";
 import { usePlaylistsQuery } from "@/queries/playlists";
@@ -91,20 +91,29 @@ export function Sidebar() {
         borderRadius: "12px",
       }}
     >
-      {/* Sidebar toggle */}
-      <div className={cn("flex items-center p-4", sidebarCollapsed ? "justify-center" : "justify-end")}>
-        <button
-          onClick={toggleSidebar}
-          className="text-[var(--color-text-muted)] hover:text-white transition-colors p-1 rounded"
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
-      </div>
-
       {/* Main nav */}
       <nav className="px-2 space-y-1">
-        <SidebarItem to="/" icon={<Home size={20} />} label="Home" collapsed={sidebarCollapsed} />
+        <div className={cn("flex items-center", sidebarCollapsed ? "justify-center" : "")}>
+          <SidebarItem to="/" icon={<Home size={20} />} label="Home" collapsed={sidebarCollapsed} />
+          {!sidebarCollapsed && (
+            <button
+              onClick={toggleSidebar}
+              className="text-[var(--color-text-muted)] hover:text-white transition-colors p-1 rounded ml-auto mr-1"
+              aria-label="Collapse sidebar"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
+        </div>
+        {sidebarCollapsed && (
+          <button
+            onClick={toggleSidebar}
+            className="flex items-center justify-center w-full py-2 rounded-md text-[var(--color-text-muted)] hover:text-white transition-colors"
+            aria-label="Expand sidebar"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
         <SidebarItem to="/songs" icon={<Music size={20} />} label="Songs" collapsed={sidebarCollapsed} />
         <SidebarItem to="/albums" icon={<Disc3 size={20} />} label="Albums" collapsed={sidebarCollapsed} />
         <SidebarItem to="/artists" icon={<Mic2 size={20} />} label="Artists" collapsed={sidebarCollapsed} />

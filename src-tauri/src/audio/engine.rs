@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
+use std::time::Instant;
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crate::audio::eq::EqConfig;
@@ -39,6 +40,7 @@ pub struct PlayerHandle {
     pub cmd_tx:             Sender<PlayerCommand>,
     pub is_playing:         Arc<AtomicBool>,
     pub volume:             Arc<AtomicU32>,
+    /// Written by the decode thread (decode-ahead position); use wall_start_* for display.
     pub position_ms:        Arc<AtomicI64>,
     pub duration_ms:        Arc<AtomicI64>,
     pub current_track_id:   Arc<Mutex<Option<String>>>,
@@ -49,6 +51,10 @@ pub struct PlayerHandle {
     /// File path of the track currently loaded (Some even while paused).
     pub current_file_path:  Arc<Mutex<Option<String>>>,
     pub viz_app_handle:     Arc<Mutex<Option<tauri::AppHandle>>>,
+    /// Wall-clock playback tracking — position when the clock was last started/reset.
+    pub wall_start_pos_ms:  Arc<AtomicI64>,
+    /// Instant the wall clock was last started. None when paused or stopped.
+    pub wall_start_time:    Arc<Mutex<Option<Instant>>>,
 }
 
 impl PlayerHandle {
@@ -64,6 +70,8 @@ impl PlayerHandle {
         let selected_device   = Arc::new(Mutex::new(None::<String>));
         let current_file_path = Arc::new(Mutex::new(None::<String>));
         let viz_app_handle    = Arc::new(Mutex::new(None::<tauri::AppHandle>));
+        let wall_start_pos_ms = Arc::new(AtomicI64::new(0));
+        let wall_start_time   = Arc::new(Mutex::new(None::<Instant>));
 
         let handle = Arc::new(PlayerHandle {
             cmd_tx,
@@ -76,6 +84,8 @@ impl PlayerHandle {
             selected_device:   selected_device.clone(),
             current_file_path: current_file_path.clone(),
             viz_app_handle:    viz_app_handle.clone(),
+            wall_start_pos_ms: wall_start_pos_ms.clone(),
+            wall_start_time:   wall_start_time.clone(),
         });
 
         {
@@ -97,6 +107,8 @@ impl PlayerHandle {
                 current_file_path,
                 media_update_tx,
                 viz_app_handle,
+                wall_start_pos_ms,
+                wall_start_time,
             );
         });
 
@@ -141,6 +153,10 @@ fn open_device(name: Option<&str>) -> Option<cpal::Device> {
 /// Build a cpal f32 output stream that drains from the chunk channel.
 /// When the sender side drops (decode thread done) the callback sets
 /// `is_playing = false` after it has played the last buffered sample.
+///
+/// Tries the file's native sample rate first; if the device (e.g. AirPlay,
+/// Bluetooth) rejects it, falls back to the device's preferred rate so that
+/// at least some audio plays rather than failing silently.
 fn build_stream(
     device:     &cpal::Device,
     sample_rate: u32,
@@ -151,9 +167,35 @@ fn build_stream(
     is_playing: Arc<AtomicBool>,
     viz_tx:     VisualizerTx,
 ) -> Option<cpal::Stream> {
+    use cpal::traits::DeviceTrait;
+
+    // Check whether the device advertises support for the file's sample rate.
+    // Some virtual/network devices (AirPlay, Bluetooth A2DP) have a narrow
+    // supported range and will reject an unsupported rate at stream-open time.
+    let use_rate = {
+        let supported = device.supported_output_configs()
+            .map(|mut it| it.any(|c| {
+                c.min_sample_rate().0 <= sample_rate &&
+                c.max_sample_rate().0 >= sample_rate
+            }))
+            .unwrap_or(true); // if query fails assume it's fine and let cpal decide
+
+        if supported {
+            sample_rate
+        } else if let Ok(dc) = device.default_output_config() {
+            eprintln!(
+                "[audio] device does not support {}Hz; falling back to device default {}Hz",
+                sample_rate, dc.sample_rate().0
+            );
+            dc.sample_rate().0
+        } else {
+            sample_rate
+        }
+    };
+
     let config = cpal::StreamConfig {
         channels,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate: cpal::SampleRate(use_rate),
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -357,6 +399,22 @@ fn send_media_update(tx: &MediaControlTx, update: MediaControlUpdate) {
     }
 }
 
+fn wall_position(
+    wall_start_pos_ms: &Arc<AtomicI64>,
+    wall_start_time: &Arc<Mutex<Option<Instant>>>,
+    duration_ms: &Arc<AtomicI64>,
+) -> i64 {
+    let guard = wall_start_time.lock().unwrap();
+    match *guard {
+        Some(t) => {
+            let elapsed = t.elapsed().as_millis() as i64;
+            let dur = duration_ms.load(Ordering::Relaxed);
+            (wall_start_pos_ms.load(Ordering::Relaxed) + elapsed).min(dur).max(0)
+        }
+        None => wall_start_pos_ms.load(Ordering::Relaxed).max(0),
+    }
+}
+
 fn audio_loop(
     cmd_rx:            Receiver<PlayerCommand>,
     is_playing:        Arc<AtomicBool>,
@@ -369,6 +427,8 @@ fn audio_loop(
     current_file_path: Arc<Mutex<Option<String>>>,
     media_update_tx:   MediaControlTx,
     viz_app_handle:    Arc<Mutex<Option<tauri::AppHandle>>>,
+    wall_start_pos_ms: Arc<AtomicI64>,
+    wall_start_time:   Arc<Mutex<Option<Instant>>>,
 ) {
     let mut active: Option<ActivePlayback> = None;
 
@@ -391,15 +451,18 @@ fn audio_loop(
                     viz_ah,
                 );
 
+                // Start wall clock from the requested start position.
+                wall_start_pos_ms.store(start_ms as i64, Ordering::Relaxed);
+                *wall_start_time.lock().unwrap() = Some(Instant::now());
+
                 let dur = duration_ms.load(Ordering::Relaxed) as u64;
-                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
                 send_media_update(&media_update_tx, MediaControlUpdate::TrackChanged(
                     crate::media_control::TrackMetadata {
                         title,
                         artist,
                         album,
                         duration_ms: dur,
-                        elapsed_ms: pos,
+                        elapsed_ms: start_ms,
                         artwork_file,
                     }
                 ));
@@ -411,8 +474,25 @@ fn audio_loop(
                     act.is_paused.store(true, Ordering::Relaxed);
                 }
                 is_playing.store(false, Ordering::Relaxed);
-                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
-                send_media_update(&media_update_tx, MediaControlUpdate::Paused(pos));
+
+                // Freeze wall clock: compute accurate position and store it.
+                let paused_pos = {
+                    let mut wt = wall_start_time.lock().unwrap();
+                    let pos = match *wt {
+                        Some(t) => {
+                            let elapsed = t.elapsed().as_millis() as i64;
+                            let dur = duration_ms.load(Ordering::Relaxed);
+                            (wall_start_pos_ms.load(Ordering::Relaxed) + elapsed).min(dur).max(0)
+                        }
+                        None => wall_start_pos_ms.load(Ordering::Relaxed).max(0),
+                    };
+                    *wt = None;
+                    pos
+                };
+                wall_start_pos_ms.store(paused_pos, Ordering::Relaxed);
+                position_ms.store(paused_pos, Ordering::Relaxed);
+
+                send_media_update(&media_update_tx, MediaControlUpdate::Paused(paused_pos.max(0) as u64));
             }
 
             Ok(PlayerCommand::Resume) => {
@@ -420,14 +500,26 @@ fn audio_loop(
                     act.is_paused.store(false, Ordering::Relaxed);
                 }
                 is_playing.store(true, Ordering::Relaxed);
-                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
-                send_media_update(&media_update_tx, MediaControlUpdate::Resumed(pos));
+
+                // Restart wall clock from the stored paused position.
+                *wall_start_time.lock().unwrap() = Some(Instant::now());
+                let pos = wall_start_pos_ms.load(Ordering::Relaxed);
+                let dur = duration_ms.load(Ordering::Relaxed);
+                send_media_update(&media_update_tx, MediaControlUpdate::Resumed(pos.max(0) as u64));
+                let _ = dur; // suppress unused warning
             }
 
             Ok(PlayerCommand::Seek { position_ms: pos }) => {
                 if let Some(ref act) = active {
                     let _ = act.seek_tx.send(pos);
                 }
+                // Update wall clock immediately so get_player_state reflects the
+                // new position without waiting for the decode thread to process it.
+                wall_start_pos_ms.store(pos as i64, Ordering::Relaxed);
+                if is_playing.load(Ordering::Relaxed) {
+                    *wall_start_time.lock().unwrap() = Some(Instant::now());
+                }
+                position_ms.store(pos as i64, Ordering::Relaxed);
                 send_media_update(&media_update_tx, MediaControlUpdate::Seeked(pos));
             }
 
@@ -439,6 +531,8 @@ fn audio_loop(
                 if let Some(old) = active.take() { old.halt(); }
                 is_playing.store(false, Ordering::Relaxed);
                 position_ms.store(0, Ordering::Relaxed);
+                wall_start_pos_ms.store(0, Ordering::Relaxed);
+                *wall_start_time.lock().unwrap() = None;
                 *current_track_id.lock().unwrap() = None;
                 *current_file_path.lock().unwrap() = None;
                 send_media_update(&media_update_tx, MediaControlUpdate::Stopped);
@@ -450,6 +544,11 @@ fn audio_loop(
                 let was_paused = active.as_ref()
                     .map(|a| a.is_paused.load(Ordering::Relaxed))
                     .unwrap_or(false);
+
+                // Use wall-clock position (accurate), not decode position.
+                let current_pos = wall_position(&wall_start_pos_ms, &wall_start_time, &duration_ms);
+                position_ms.store(current_pos, Ordering::Relaxed);
+
                 if let Some(old) = active.take() { old.halt(); }
                 is_playing.store(false, Ordering::Relaxed);
                 *selected_device.lock().unwrap() = device_name;
@@ -457,21 +556,24 @@ fn audio_loop(
                 // Restart playback on the new device if a track was active
                 let resume = current_file_path.lock().unwrap().clone();
                 if let Some(ref fp) = resume {
-                    let pos = position_ms.load(Ordering::Relaxed);
                     let viz_ah = viz_app_handle.lock().unwrap().clone();
                     start_playback(
-                        fp, pos.max(0) as u64,
+                        fp, current_pos.max(0) as u64,
                         &mut active,
                         &is_playing, &position_ms, &duration_ms,
                         &current_track_id, &current_file_path,
                         &eq_config, &selected_device, &volume,
                         viz_ah,
                     );
+                    wall_start_pos_ms.store(current_pos, Ordering::Relaxed);
                     if was_paused {
                         if let Some(ref act) = active {
                             act.is_paused.store(true, Ordering::Relaxed);
                         }
                         is_playing.store(false, Ordering::Relaxed);
+                        *wall_start_time.lock().unwrap() = None;
+                    } else {
+                        *wall_start_time.lock().unwrap() = Some(Instant::now());
                     }
                 }
             }

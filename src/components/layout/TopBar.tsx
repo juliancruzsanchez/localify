@@ -1,4 +1,4 @@
-import { Home, Search, Settings, X, Music, Disc3, Mic2 } from "lucide-react";
+import { Home, Search, Settings, X, Minus, Square, Music, Disc3, Mic2, Download, Loader2, ListMusic } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -7,6 +7,7 @@ import { useSearchQuery } from "@/queries/search";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { usePlayerStore } from "@/store/playerStore";
+import { useUiStore } from "@/store/uiStore";
 import type { Track, Album, Artist } from "@/types";
 
 // ─── Artwork thumbnail used inside the dropdown ───────────────────────────────
@@ -134,6 +135,7 @@ const MAX_ARTISTS = 3;
 export function TopBar() {
   const navigate = useNavigate();
   const { playTrack } = usePlayerStore();
+  const { setSettingsOpen, downloads } = useUiStore();
 
   const [query, setQuery]       = useState("");
   const [open, setOpen]         = useState(false);
@@ -166,7 +168,8 @@ export function TopBar() {
   ];
 
   const hasResults = tracks.length > 0 || albums.length > 0 || artists.length > 0;
-  const dropdownVisible = open && query.trim().length > 0 && hasResults;
+  const totalResults = tracks.length + albums.length + artists.length;
+  const dropdownVisible = open && query.trim().length > 0 && (hasResults || totalResults < 3);
 
   // Close on outside click
   useEffect(() => {
@@ -256,6 +259,7 @@ export function TopBar() {
 
   return (
     <header
+      data-tauri-drag-region
       style={{
         gridArea: "topbar",
         height: "var(--topbar-height)",
@@ -266,37 +270,41 @@ export function TopBar() {
         padding: "0 16px 0 12px",
         gap: "8px",
         borderRadius: "12px 12px 0 0",
-        overflow: "hidden",
       }}
     >
-      {/* Logo + name + window controls */}
+      {/* Logo + window controls + name */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Logo */}
+        {/* Window controls — to the right of the logo, before the name */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleClose}
+            title="Close"
+            className="group/wc w-3.5 h-3.5 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center"
+          >
+            <X size={8} className="hidden group-hover/wc:block text-red-900" strokeWidth={3} />
+          </button>
+          <button
+            onClick={handleMinimize}
+            title="Minimize"
+            className="group/wc w-3.5 h-3.5 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center"
+          >
+            <Minus size={8} className="hidden group-hover/wc:block text-yellow-900" strokeWidth={3} />
+          </button>
+          <button
+            onClick={handleMaximize}
+            title="Maximize"
+            className="group/wc w-3.5 h-3.5 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center"
+          >
+            <Square size={6} className="hidden group-hover/wc:block text-green-900" strokeWidth={2.5} />
+          </button>
+        </div>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-[var(--color-accent)]">
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
           <circle cx="12" cy="12" r="4" fill="currentColor" />
           <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
-        <span className="text-white font-bold text-base tracking-tight mr-1">Localify</span>
 
-        {/* Window controls */}
-        <div className="flex items-center gap-1.5 ml-1">
-          <button
-            onClick={handleClose}
-            title="Close"
-            className="w-3.5 h-3.5 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center"
-          />
-          <button
-            onClick={handleMinimize}
-            title="Minimize"
-            className="w-3.5 h-3.5 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center"
-          />
-          <button
-            onClick={handleMaximize}
-            title="Maximize"
-            className="w-3.5 h-3.5 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center"
-          />
-        </div>
+        <span className="text-white font-bold text-base tracking-tight">Localify</span>
       </div>
 
       {/* Home button */}
@@ -411,14 +419,40 @@ export function TopBar() {
                   <strong className="text-white">"{query.trim()}"</strong>
                 </span>
               </button>
+
+              {totalResults < 3 && (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); goToFullSearch(); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-sm transition-colors text-[var(--color-text-muted)] hover:text-white hover:bg-white/5"
+                >
+                  <Download size={14} className="flex-shrink-0" />
+                  <span>
+                    Search YouTube for{" "}
+                    <strong className="text-white">"{query.trim()}"</strong>
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Download status */}
+      <div className="relative flex items-center">
+        {Object.keys(downloads).length > 0 && (
+          <button
+            onClick={() => navigate("/search")}
+            title="Active downloads"
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 text-[var(--color-accent)] hover:text-white hover:bg-black/60 transition-colors flex-shrink-0"
+          >
+            <Loader2 size={16} className="animate-spin" />
+          </button>
+        )}
+      </div>
+
       {/* Settings button */}
       <button
-        onClick={() => navigate("/settings")}
+        onClick={() => setSettingsOpen(true)}
         title="Settings"
         className="flex items-center justify-center w-9 h-9 rounded-full bg-black/40 text-[var(--color-text-muted)] hover:text-white hover:bg-black/60 transition-colors flex-shrink-0"
       >

@@ -4,6 +4,21 @@ use crate::error::{AppError, Result};
 use crate::state::AppState;
 
 #[tauri::command]
+pub async fn get_all_genres(state: State<'_, AppState>) -> Result<Vec<String>> {
+    let conn = state.db.lock().unwrap();
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT genre
+         FROM tracks
+         WHERE genre IS NOT NULL AND removed_at IS NULL
+         ORDER BY genre COLLATE NOCASE",
+    )?;
+    let genres = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(genres)
+}
+
+#[tauri::command]
 pub async fn get_tracks(state: State<'_, AppState>) -> Result<Vec<Track>> {
     let conn = state.db.lock().unwrap();
     get_all_tracks(&conn)

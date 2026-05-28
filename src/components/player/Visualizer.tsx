@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import type React from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -7,8 +7,8 @@ import { DEFAULT_COLORS } from "@/hooks/useVisualizerColors";
 
 const BAR_COUNT = 32;
 
-export type Mode = "bars" | "alchemy" | "plasma" | "vortex" | "radial" | "synthgrid" | "tunnel" | "ocean" | "artwork";
-export const MODES: Mode[] = ["bars", "alchemy", "plasma", "vortex", "radial", "synthgrid", "tunnel", "ocean", "artwork"];
+export type Mode = "bars" | "alchemy" | "plasma" | "vortex" | "radial" | "synthgrid" | "tunnel" | "ocean" | "artwork" | "warp" | "hypno" | "dna" | "melt";
+export const MODES: Mode[] = ["bars", "alchemy", "plasma", "vortex", "radial", "synthgrid", "tunnel", "ocean", "artwork", "warp", "hypno", "dna", "melt"];
 export const MODE_LABELS: Record<Mode, string> = {
   bars:      "SPECTRUM",
   alchemy:   "ALCHEMY",
@@ -19,6 +19,10 @@ export const MODE_LABELS: Record<Mode, string> = {
   tunnel:    "TUNNEL",
   ocean:     "SOUND OCEAN",
   artwork:   "ALBUM AURA",
+  warp:      "WARP DRIVE",
+  hypno:     "HYPNOTIZE",
+  dna:       "DNA HELIX",
+  melt:      "MIND MELT",
 };
 
 // ─── color helpers ─────────────────────────────────────────────────────────────
@@ -91,6 +95,8 @@ function extractColors(img: HTMLImageElement): [number, number, number][] {
 }
 
 interface LightningBolt { points: [number, number][]; hue: number; width: number; alpha: number; }
+interface WarpStar      { x: number; y: number; z: number; speed: number; }
+interface WarpRing      { radius: number; maxRadius: number; alpha: number; speed: number; }
 
 interface Props {
   className?: string;
@@ -98,17 +104,15 @@ interface Props {
   colors?: VisualizerColors;
   artworkHash?: string | null;
   mode?: Mode;
-  onModeChange?: (mode: Mode) => void;
 }
 
-export function Visualizer({ className, style, colors, artworkHash, mode, onModeChange }: Props) {
+export function Visualizer({ className, style, colors, artworkHash, mode }: Props) {
   const canvasRef         = useRef<HTMLCanvasElement>(null);
   const bandDataRef       = useRef<number[]>(new Array(BAR_COUNT).fill(0));
   const displayedRef      = useRef<number[]>(new Array(BAR_COUNT).fill(0));
   const peaksRef          = useRef<number[]>(new Array(BAR_COUNT).fill(0));
   const rafRef            = useRef<number>(0);
   const modeIndexRef      = useRef<number>(0);
-  const labelTimerRef     = useRef<number>(0);
   const alchemyTRef       = useRef<number>(0);
   const vortexAngleRef    = useRef<number>(0);
   const lightningRef      = useRef<LightningBolt[]>([]);
@@ -119,14 +123,16 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
   const oceanPhaseRef     = useRef<number>(0);
   const beatRef           = useRef<{ bass: number; time: number }>({ bass: 0, time: 0 });
   const colorsRef         = useRef<VisualizerColors>(colors ?? DEFAULT_COLORS);
-  const onModeChangeRef   = useRef(onModeChange);
   // artwork mode refs
   const artworkImgRef     = useRef<HTMLImageElement | null>(null);
   const artworkBlurredRef = useRef<HTMLCanvasElement | null>(null);
   const artworkColorsRef  = useRef<[number, number, number][]>([[0, 100, 200], [140, 0, 220], [220, 80, 0]]);
+  // warp / dna mode refs
+  const warpStarsRef      = useRef<WarpStar[]>([]);
+  const warpRingsRef      = useRef<WarpRing[]>([]);
+  const dnaPhaseRef       = useRef<number>(0);
 
   useEffect(() => { colorsRef.current = colors ?? DEFAULT_COLORS; }, [colors]);
-  useEffect(() => { onModeChangeRef.current = onModeChange; }, [onModeChange]);
   useEffect(() => {
     if (mode === undefined) return;
     const idx = MODES.indexOf(mode);
@@ -182,12 +188,6 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
     };
   }, [artworkHash]);
 
-  const handleClick = useCallback(() => {
-    modeIndexRef.current = (modeIndexRef.current + 1) % MODES.length;
-    labelTimerRef.current = Date.now();
-    onModeChangeRef.current?.(MODES[modeIndexRef.current]);
-  }, []);
-
   useEffect(() => {
     const unlistenPromise = listen<number[]>("visualizer-update", (event) => {
       const p = event.payload;
@@ -209,31 +209,6 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       return [w, h];
-    }
-
-    function drawLabel(ctx: CanvasRenderingContext2D, w: number, h: number) {
-      const elapsed = Date.now() - labelTimerRef.current;
-      if (elapsed > 2000) return;
-      const alpha = elapsed < 1000 ? 1 : 1 - (elapsed - 1000) / 1000;
-      if (alpha <= 0) return;
-      const mode  = MODES[modeIndexRef.current];
-      const label = MODE_LABELS[mode];
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, alpha);
-      ctx.font        = "bold 13px 'SF Mono', 'Fira Code', monospace";
-      ctx.textAlign   = "center";
-      const mx = w / 2;
-      const my = h - 28;
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.beginPath();
-      ctx.roundRect(mx - tw / 2 - 12, my - 14, tw + 24, 22, 6);
-      ctx.fill();
-      ctx.fillStyle   = "#ffffff";
-      ctx.shadowColor = "rgba(0,0,0,0.8)";
-      ctx.shadowBlur  = 4;
-      ctx.fillText(label, mx, my);
-      ctx.restore();
     }
 
     function beatDetect(bass: number): boolean {
@@ -1357,6 +1332,361 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
       ctx.fillRect(0, 0, w, h);
     }
 
+    // ─── WARP ─────────────────────────────────────────────────────────────────
+
+    function drawWarp(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["warp"]) {
+      ctx.fillStyle = "rgba(0,0,12,0.22)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const bass    = b[0];
+      const high    = b[22];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const stars   = warpStarsRef.current;
+
+      if (stars.length === 0) {
+        for (let i = 0; i < 300; i++) {
+          stars.push({ x: (Math.random() - 0.5) * 2400, y: (Math.random() - 0.5) * 2400, z: Math.random() * 900 + 1, speed: 2.5 + Math.random() * 4.5 });
+        }
+      }
+
+      const warpSpeed = 1 + bass * 20 + high * 5;
+      const FOCAL     = Math.min(w, h) * 0.65;
+      const colorT    = Date.now() * 0.04;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.lineCap = "round";
+
+      for (let si = 0; si < stars.length; si++) {
+        const star  = stars[si];
+        const prevZ = star.z;
+        star.z -= star.speed * warpSpeed * 0.08;
+
+        if (star.z <= 1) {
+          star.x = (Math.random() - 0.5) * 2400;
+          star.y = (Math.random() - 0.5) * 2400;
+          star.z = 900;
+          continue;
+        }
+
+        const sx  = cx + (star.x / star.z)   * FOCAL;
+        const sy  = cy + (star.y / star.z)   * FOCAL;
+        const px  = cx + (star.x / prevZ)    * FOCAL;
+        const py  = cy + (star.y / prevZ)    * FOCAL;
+        const t   = 1 - star.z / 900;
+        const hue = (si % 3 === 0 ? secHue : primHue) + (si / stars.length) * 80 + colorT;
+
+        ctx.strokeStyle = `hsla(${hue % 360},100%,${50 + t * 40}%,${t * 0.85 + 0.12})`;
+        ctx.lineWidth   = Math.max(0.3, t * 2.5 + bass * 1.5);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // ─── Nebula clouds ──────────────────────────────────────────────────────
+      const nebulaTime = Date.now() * 0.00015;
+      for (let ni = 0; ni < 3; ni++) {
+        const angle  = nebulaTime + (ni / 3) * Math.PI * 2;
+        const dist   = 30 + bass * 120;
+        const nx     = cx + Math.cos(angle) * dist;
+        const ny     = cy + Math.sin(angle) * dist;
+        const size   = 40 + bass * 180;
+        const hue    = (ni % 2 === 0 ? primHue : secHue) + nebulaTime * 30 + ni * 40;
+        const grad   = ctx.createRadialGradient(nx, ny, 0, nx, ny, size);
+        grad.addColorStop(0, `hsla(${hue % 360}, 90%, 55%, ${0.03 + bass * 0.06})`);
+        grad.addColorStop(1, "transparent");
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+
+      // ─── Pulse rings ────────────────────────────────────────────────────────
+      const isBeat = beatDetect(bass);
+      if (isBeat) {
+        warpRingsRef.current.push({
+          radius:    5,
+          maxRadius: Math.min(w, h) * 0.55,
+          alpha:     0.5,
+          speed:     2 + high * 12,
+        });
+      }
+      const rings = warpRingsRef.current;
+      for (let ri = rings.length - 1; ri >= 0; ri--) {
+        const ring = rings[ri];
+        ring.radius += ring.speed + bass * 3;
+        ring.alpha  *= 0.955;
+        if (ring.alpha < 0.01 || ring.radius > ring.maxRadius) {
+          rings.splice(ri, 1);
+          continue;
+        }
+        const hue = (secHue + ri * 60 + colorT) % 360;
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${ring.alpha})`;
+        ctx.lineWidth   = 1.5 + bass * 5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // ─── Light rays ─────────────────────────────────────────────────────────
+      const numRays = 24;
+      for (let ri = 0; ri < numRays; ri++) {
+        const fi = ri / numRays;
+        const angle = fi * Math.PI * 2 + colorT * 0.1;
+        const bandIdx = Math.floor(fi * BAR_COUNT);
+        const amp = b[bandIdx] ?? 0;
+        const len = 20 + amp * 200;
+        const hue = (primHue + fi * 120 + colorT * 0.5) % 360;
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.strokeStyle = `hsla(${hue}, 100%, 60%, ${0.04 + amp * 0.35})`;
+        ctx.lineWidth   = 0.6 + amp * 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // ─── Central glow ───────────────────────────────────────────────────────
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 35 + bass * 70);
+      cg.addColorStop(0,   `rgba(255,255,255,${0.08 + bass * 0.25})`);
+      cg.addColorStop(0.4, `hsla(${primHue},100%,60%,${0.06 + bass * 0.14})`);
+      cg.addColorStop(1,   "transparent");
+      ctx.fillStyle = cg;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // ─── HYPNO ────────────────────────────────────────────────────────────────
+
+    function drawHypno(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["hypno"]) {
+      ctx.fillStyle = "rgba(0,0,4,0.05)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const now     = Date.now() * 0.001;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+
+      const RINGS = 20;
+      for (let i = 0; i < RINGS; i++) {
+        const fi    = RINGS - 1 - i;
+        const tNorm = fi / RINGS;
+        const amp   = b[Math.floor(tNorm * BAR_COUNT)];
+        const r     = dim * (0.02 + tNorm * 0.49) * (1 + amp * 0.28 + bass * 0.10);
+        const dir   = fi % 2 === 0 ? 1 : -1.3;
+        const rot   = now * dir * (0.18 + amp * 0.60) + fi * 0.31;
+        const SIDES = 3 + (fi % 6);
+        const hue   = fi % 2 === 0 ? (primHue + now * 35 + fi * (360 / RINGS)) % 360 : (secHue + now * 20 + fi * (360 / RINGS) + 180) % 360;
+
+        ctx.strokeStyle = `hsla(${hue},100%,55%,${0.35 + amp * 0.60})`;
+        ctx.lineWidth   = 0.8 + amp * 3.0 + tNorm * 1.5;
+        ctx.shadowColor = `hsl(${hue},100%,65%)`;
+        ctx.shadowBlur  = 4 + amp * 18;
+
+        ctx.beginPath();
+        for (let s = 0; s <= SIDES; s++) {
+          const angle  = (s / SIDES) * Math.PI * 2 + rot;
+          const morphR = r * (1 + Math.sin(s * 1.3 + now * 2 + fi) * 0.08 * amp);
+          const px = cx + Math.cos(angle) * morphR;
+          const py = cy + Math.sin(angle) * morphR;
+          if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+
+      const sg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14 + bass * 35);
+      sg.addColorStop(0, `hsla(${primHue},100%,90%,${0.6 + bass * 0.4})`);
+      sg.addColorStop(1, "transparent");
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // ─── DNA ──────────────────────────────────────────────────────────────────
+
+    function drawDna(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["dna"]) {
+      ctx.fillStyle = "rgba(0,2,8,0.30)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const bass    = b[0];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      dnaPhaseRef.current += 0.014 + bass * 0.022;
+      const phase  = dnaPhaseRef.current;
+      const RUNGS  = 36;
+      const HELIX_H = Math.min(h * 0.88, 640);
+      const HELIX_R = Math.min(w * 0.26, 160);
+
+      type Rung = { x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; amp: number; t: number; };
+      const rungs: Rung[] = [];
+
+      for (let i = 0; i < RUNGS; i++) {
+        const t     = i / (RUNGS - 1);
+        const y     = cy - HELIX_H / 2 + t * HELIX_H;
+        const angle = t * Math.PI * 4 + phase;
+        const amp   = b[Math.floor(t * (BAR_COUNT - 1))];
+        const r     = HELIX_R * (1 + amp * 0.18);
+        rungs.push({
+          x1: cx + Math.cos(angle) * r,         y1: y, z1: Math.sin(angle),
+          x2: cx + Math.cos(angle + Math.PI) * r, y2: y, z2: Math.sin(angle + Math.PI),
+          amp, t,
+        });
+      }
+
+      ctx.lineCap = "round";
+      // backbone lines
+      for (let i = 0; i < rungs.length - 1; i++) {
+        const a = rungs[i];
+        const n = rungs[i + 1];
+        const h1 = (primHue + a.t * 240) % 360;
+        const h2 = (secHue  + a.t * 240) % 360;
+        ctx.shadowBlur  = 3 + a.amp * 10;
+        ctx.lineWidth   = 1.5 + a.amp * 2;
+        ctx.shadowColor = `hsl(${h1},100%,60%)`;
+        ctx.strokeStyle = `hsla(${h1},100%,50%,${Math.max(0.05, 0.25 + (a.z1 + n.z1) * 0.15)})`;
+        ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(n.x1, n.y1); ctx.stroke();
+        ctx.shadowColor = `hsl(${h2},100%,60%)`;
+        ctx.strokeStyle = `hsla(${h2},100%,50%,${Math.max(0.05, 0.25 + (a.z2 + n.z2) * 0.15)})`;
+        ctx.beginPath(); ctx.moveTo(a.x2, a.y2); ctx.lineTo(n.x2, n.y2); ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+
+      const sorted = rungs.slice().sort((a, r2) => (a.z1 + a.z2) - (r2.z1 + r2.z2));
+      for (const rung of sorted) {
+        const h1      = (primHue + rung.t * 240) % 360;
+        const h2      = (secHue  + rung.t * 240) % 360;
+        const midHue  = (h1 + h2) / 2;
+        const zAlpha  = (Math.abs(rung.z1) + Math.abs(rung.z2)) * 0.3 + rung.amp * 0.55;
+        ctx.strokeStyle = `hsla(${midHue},75%,65%,${Math.max(0.08, zAlpha * 0.65)})`;
+        ctx.lineWidth   = 1 + rung.amp * 2.5;
+        ctx.shadowColor = `hsl(${midHue},100%,70%)`;
+        ctx.shadowBlur  = 5 + rung.amp * 14;
+        ctx.beginPath(); ctx.moveTo(rung.x1, rung.y1); ctx.lineTo(rung.x2, rung.y2); ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        for (const [px, py, hz, zv] of [[rung.x1, rung.y1, h1, rung.z1], [rung.x2, rung.y2, h2, rung.z2]] as [number,number,number,number][]) {
+          const rr = Math.max(0.1, 3 + rung.amp * 6 + zv * 1.5);
+          const aa = Math.max(0.05, 0.4 + zv * 0.5 + rung.amp * 0.3);
+          const g  = ctx.createRadialGradient(px, py, 0, px, py, rr);
+          g.addColorStop(0, `hsla(${hz},100%,85%,${aa})`);
+          g.addColorStop(1, "transparent");
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    // ─── MELT ─────────────────────────────────────────────────────────────────
+
+    function drawMelt(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["melt"]) {
+      ctx.fillStyle = "rgba(2,0,8,0.10)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const high    = b[22];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const now     = Date.now();
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+
+      for (let i = 0; i < 12; i++) {
+        const sp  = 0.00014 * (1 + i * 0.28);
+        const bx  = cx + Math.sin(now * sp        + i * 1.74) * w * 0.45;
+        const by  = cy + Math.cos(now * sp * 0.70 + i * 2.31) * h * 0.45;
+        const amp = b[Math.floor((i / 12) * BAR_COUNT)];
+        const br  = dim * (0.17 + amp * 0.28 + bass * 0.12);
+        const hue = (primHue + now * 0.008 + i * 30) % 360;
+        const g   = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+        g.addColorStop(0,   `hsla(${hue},100%,50%,${0.09 + amp * 0.19})`);
+        g.addColorStop(0.5, `hsla(${hue},80%,35%,0.04)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      for (let i = 0; i < 8; i++) {
+        const sp  = 0.00038 * (1 + i * 0.55);
+        const bx  = cx + Math.sin(now * sp        + i * 2.13 + Math.PI) * w * 0.36;
+        const by  = cy + Math.cos(now * sp * 0.83 + i * 1.91)            * h * 0.36;
+        const amp = b[Math.floor((20 + i * 1.5) % BAR_COUNT)];
+        const br  = dim * (0.055 + amp * 0.13 + high * 0.09);
+        const hue = (secHue + now * 0.018 + i * 45 + 180) % 360;
+        const g   = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+        g.addColorStop(0,   `hsla(${hue},100%,68%,${0.14 + amp * 0.33})`);
+        g.addColorStop(0.4, `hsla(${hue},80%,40%,0.05)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + now * 0.00025 * (i % 2 === 0 ? 1 : -0.75);
+        const amp   = b[Math.floor((i / 6) * BAR_COUNT)];
+        const gx1   = cx + Math.cos(angle) * dim * 0.65;
+        const gy1   = cy + Math.sin(angle) * dim * 0.65;
+        const gx2   = cx - Math.cos(angle) * dim * 0.65;
+        const gy2   = cy - Math.sin(angle) * dim * 0.65;
+        const hue   = (primHue + i * 60 + now * 0.012) % 360;
+        const g     = ctx.createLinearGradient(gx1, gy1, gx2, gy2);
+        const a     = 0.03 + amp * 0.14 + bass * 0.06;
+        g.addColorStop(0,    "transparent");
+        g.addColorStop(0.38, `hsla(${hue},100%,40%,${a})`);
+        g.addColorStop(0.62, `hsla(${hue},100%,40%,${a})`);
+        g.addColorStop(1,    "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      if (beatDetect(bass)) {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, dim * 0.62);
+        fg.addColorStop(0, `hsla(${primHue},100%,90%,0.14)`);
+        fg.addColorStop(1, "transparent");
+        ctx.fillStyle = fg;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+
+      const vg = ctx.createRadialGradient(cx, cy, dim * 0.18, cx, cy, dim * 0.80);
+      vg.addColorStop(0, "transparent");
+      vg.addColorStop(1, "rgba(0,0,0,0.55)");
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.globalAlpha = 0.03;
+      ctx.fillStyle   = "#000";
+      for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+      ctx.restore();
+    }
+
     // ─── main loop ────────────────────────────────────────────────────────────
 
     const draw = () => {
@@ -1384,9 +1714,12 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         case "tunnel":    drawTunnel(ctx, w, h, displayed, c.tunnel);       break;
         case "ocean":     drawOcean(ctx, w, h, displayed, c.ocean);         break;
         case "artwork":   drawArtwork(ctx, w, h, displayed);                break;
+        case "warp":      drawWarp(ctx, w, h, displayed, c.warp);          break;
+        case "hypno":     drawHypno(ctx, w, h, displayed, c.hypno);        break;
+        case "dna":       drawDna(ctx, w, h, displayed, c.dna);            break;
+        case "melt":      drawMelt(ctx, w, h, displayed, c.melt);          break;
       }
 
-      drawLabel(ctx, w, h);
       rafRef.current = requestAnimationFrame(draw);
     };
 
@@ -1402,9 +1735,7 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ display: "block", width: "100%", height: "100%", cursor: "pointer", ...style }}
-      onClick={handleClick}
-      title="Click to cycle visualizer mode"
+      style={{ display: "block", width: "100%", height: "100%", ...style }}
     />
   );
 }

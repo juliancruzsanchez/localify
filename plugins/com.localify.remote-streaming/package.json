@@ -1,0 +1,22 @@
+{
+  "name": "@localify-plugins/remote-streaming",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remote Streaming plugin for Localify — host your library as an HTTP file server",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0",
+    "@vitejs/plugin-react": "^4.0.0"
+  }
+}

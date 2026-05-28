@@ -1,5 +1,6 @@
-import { Play, Heart, Music } from "lucide-react";
+import { Play, Music, Heart } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
+import { useNavigate } from "react-router";
 import { usePlayerStore } from "@/store/playerStore";
 import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
@@ -18,6 +19,7 @@ interface TrackRowProps {
 }
 
 export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps) {
+  const navigate = useNavigate();
   const { playTrack, togglePlayPause, isPlaying, currentTrack } = usePlayerStore();
   const isLiked = useIsLiked(track.id);
   const { mutate: likeTrack } = useLikeTrack();
@@ -91,12 +93,22 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
         <p className={cn("truncate font-medium", isActive ? "text-[var(--color-accent)]" : "text-white")}>
           {track.title}
         </p>
-        <p className="truncate text-xs text-[var(--color-text-muted)]">{track.artist}</p>
+        <button
+          onClick={(e) => { e.stopPropagation(); if (track.artist_id) navigate(`/artists/${track.artist_id}`); }}
+          className="truncate text-xs text-[var(--color-text-muted)] hover:underline hover:text-white text-left cursor-pointer"
+        >
+          {track.artist}
+        </button>
       </div>
 
       {/* Album */}
       <div className="hidden md:block flex-1 min-w-0">
-        <p className="truncate text-[var(--color-text-muted)]">{track.album_title ?? "—"}</p>
+        <button
+          onClick={(e) => { e.stopPropagation(); if (track.album_id) navigate(`/albums/${track.album_id}`); }}
+          className="truncate text-[var(--color-text-muted)] hover:underline hover:text-white text-left cursor-pointer"
+        >
+          {track.album_title ?? "—"}
+        </button>
       </div>
 
       {/* Format badge */}

@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use crate::db::tracks::Track;
@@ -60,7 +61,7 @@ pub async fn get_liked_tracks(
 
     const COLS: &str =
         "t.id, t.file_path, t.title, t.artist, t.album_artist,
-         t.album_id, a.title AS album_title, t.track_number, t.disc_number,
+         t.artist_id, t.album_id, a.title AS album_title, t.track_number, t.disc_number,
          t.year, t.genre, t.duration_secs, t.sample_rate, t.bit_depth,
          t.channels, t.bitrate_kbps, t.format, t.artwork_hash,
          t.play_count, t.last_played_at, lt.liked_at";
@@ -78,23 +79,24 @@ pub async fn get_liked_tracks(
                 title:          row.get(2)?,
                 artist:         row.get(3)?,
                 album_artist:   row.get(4)?,
-                album_id:       row.get(5)?,
-                album_title:    row.get(6)?,
-                track_number:   row.get(7)?,
-                disc_number:    row.get(8)?,
-                year:           row.get(9)?,
-                genre:          row.get(10)?,
-                duration_secs:  row.get(11)?,
-                sample_rate:    row.get(12)?,
-                bit_depth:      row.get(13)?,
-                channels:       row.get(14)?,
-                bitrate_kbps:   row.get(15)?,
-                format:         row.get(16)?,
-                artwork_hash:   row.get(17)?,
-                play_count:     row.get(18)?,
-                last_played_at: row.get(19)?,
+                artist_id:      row.get(5)?,
+                album_id:       row.get(6)?,
+                album_title:    row.get(7)?,
+                track_number:   row.get(8)?,
+                disc_number:    row.get(9)?,
+                year:           row.get(10)?,
+                genre:          row.get(11)?,
+                duration_secs:  row.get(12)?,
+                sample_rate:    row.get(13)?,
+                bit_depth:      row.get(14)?,
+                channels:       row.get(15)?,
+                bitrate_kbps:   row.get(16)?,
+                format:         row.get(17)?,
+                artwork_hash:   row.get(18)?,
+                play_count:     row.get(19)?,
+                last_played_at: row.get(20)?,
             },
-            liked_at: row.get(20)?,
+            liked_at: row.get(21)?,
         })
     };
 
@@ -133,4 +135,43 @@ pub async fn get_liked_genres(state: State<'_, AppState>) -> Result<Vec<String>>
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(genres)
+}
+
+#[tauri::command]
+pub async fn export_liked_m3u8(state: State<'_, AppState>, dest_path: String) -> Result<()> {
+    let mut tracks: Vec<(String, String, String, f64)> = Vec::new();
+    {
+        let conn = state.db.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT t.file_path, t.artist, t.title, t.duration_secs
+             FROM liked_tracks lt
+             JOIN tracks t ON t.id = lt.track_id AND t.removed_at IS NULL
+             ORDER BY lt.liked_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, f64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            tracks.push(row?);
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str("#EXTM3U\n");
+    out.push_str("#PLAYLIST:Liked Songs\n");
+    for (file_path, artist, title, duration_secs) in &tracks {
+        let dur = *duration_secs as i64;
+        let label = format!("{} - {}", artist, title);
+        writeln!(out, "#EXTINF:{dur},{label}").map_err(|e| AppError::Io(e.to_string()))?;
+        writeln!(out, "{file_path}").map_err(|e| AppError::Io(e.to_string()))?;
+    }
+
+    std::fs::write(&dest_path, out.as_bytes())
+        .map_err(|e| AppError::Io(format!("Cannot write M3U8: {e}")))?;
+    Ok(())
 }

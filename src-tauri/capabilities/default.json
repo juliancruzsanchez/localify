@@ -14,6 +14,12 @@
     "store:default",
     "store:allow-get",
     "store:allow-set",
-    "store:allow-save"
+    "store:allow-save",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen"
   ]
 }

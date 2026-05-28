@@ -1,4 +1,5 @@
 import { Music } from "lucide-react";
+import { useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
@@ -12,6 +13,7 @@ interface QueueTrackItemProps {
 }
 
 export function QueueTrackItem({ track, isCurrent, onClick }: QueueTrackItemProps) {
+  const navigate = useNavigate();
   const artworkPath = useArtworkUrl(track.artwork_hash);
 
   return (
@@ -48,9 +50,12 @@ export function QueueTrackItem({ track, isCurrent, onClick }: QueueTrackItemProp
         >
           {track.title}
         </p>
-        <p className="text-xs text-[var(--color-text-muted)] truncate leading-tight mt-0.5">
+        <button
+          onClick={(e) => { e.stopPropagation(); if (track.artist_id) navigate(`/artists/${track.artist_id}`); }}
+          className="text-xs text-[var(--color-text-muted)] truncate leading-tight mt-0.5 hover:underline hover:text-white text-left cursor-pointer"
+        >
           {track.artist}
-        </p>
+        </button>
       </div>
     </div>
   );

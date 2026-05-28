@@ -127,11 +127,13 @@ pub fn discover(timeout_ms: u64) -> Vec<CastDevice> {
         }
     }
 
-    // Drop the receiver first so the daemon has no active subscriptions,
-    // then let the ServiceDaemon drop naturally (avoids a race in mdns_sd 0.11
-    // where shutdown() can log "failed to send response of shutdown").
-    drop(receiver);
+    // Drop the daemon first so its background thread stops completely,
+    // then drain any leftover events and drop the receiver. Reversing the
+    // order avoids "sending on a closed channel" errors from the daemon
+    // thread trying to deliver SearchStarted events to a dropped receiver.
     drop(mdns);
+    while receiver.try_recv().is_ok() {}
+    drop(receiver);
     devices.into_values().collect()
 }
 
@@ -1000,7 +1002,9 @@ pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str) 
     use rust_cast::channels::receiver::CastDeviceApp;
     use rust_cast::channels::media::{Media, StreamType};
 
-    let cast = CastDevice::connect(device_host, device_port)
+    // Chromecasts use self-signed TLS certificates; connect_without_host_verification
+    // skips cert validation, which is required for all consumer Cast devices.
+    let cast = CastDevice::connect_without_host_verification(device_host, device_port)
         .map_err(|e| format!("Connect failed: {e}"))?;
 
     // Protocol handshake
@@ -1050,7 +1054,7 @@ pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str) 
 pub fn stop_cast_session(device_host: &str, device_port: u16) -> Result<(), String> {
     use rust_cast::CastDevice;
 
-    let cast = CastDevice::connect(device_host, device_port)
+    let cast = CastDevice::connect_without_host_verification(device_host, device_port)
         .map_err(|e| format!("Connect failed: {e}"))?;
 
     cast.connection

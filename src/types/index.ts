@@ -6,6 +6,7 @@ export interface Track {
   title: string;
   artist: string;
   album_artist: string | null;
+  artist_id: string | null;
   album_id: string | null;
   album_title: string | null;
   track_number: number | null;
