@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   StyleSheet,
   Text,
@@ -30,11 +31,19 @@ const PILLS: Pill[] = [
 ];
 
 type FilterId = 'all' | 'playlists' | 'albums' | 'artists' | 'songs' | 'downloads';
+type ViewMode = 'list' | 'grid';
+
+const GRID_COLS = 3;
+const GRID_PADDING = Spacing.sm; // gridContent paddingHorizontal
+const GRID_GAP = Spacing.sm;     // gap between columns
+const GRID_ITEM_SIZE =
+  (Dimensions.get('window').width - GRID_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
 
 export default function LibraryScreen() {
   const router = useRouter();
   const { baseUrl } = useServer();
   const [filter, setFilter] = useState<FilterId>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const downloads = useDownloadStore((s) => s.downloads);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const downloadedTracks = Object.values(downloads).map((d) => d.metadata);
@@ -47,6 +56,7 @@ export default function LibraryScreen() {
   const songs     = snapshot?.tracks    ?? [];
 
   const showLoading = isLoading && filter !== 'downloads';
+  const canGrid = filter === 'albums' || filter === 'all';
 
   // ── Renderers ────────────────────────────────────────────────────────────────
 
@@ -60,7 +70,7 @@ export default function LibraryScreen() {
       >
         {item.id === 'liked' ? (
           <LinearGradient colors={['#4a148c', '#7b1fa2']} style={styles.rowArtwork}>
-            <Text style={styles.likedIcon}>♥</Text>
+            <Ionicons name="heart" size={22} color={Colors.text} />
           </LinearGradient>
         ) : (
           <Image
@@ -74,6 +84,7 @@ export default function LibraryScreen() {
           <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.rowMeta}>Playlist · {item.track_count} songs</Text>
         </View>
+        <Ionicons name="ellipsis-vertical" size={18} color={Colors.textDim} />
       </TouchableOpacity>
     );
   }
@@ -95,6 +106,26 @@ export default function LibraryScreen() {
           <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
           <Text style={styles.rowMeta}>Album · {item.artist}</Text>
         </View>
+        <Ionicons name="ellipsis-vertical" size={18} color={Colors.textDim} />
+      </TouchableOpacity>
+    );
+  }
+
+  function renderAlbumGrid({ item }: { item: AlbumSummary }) {
+    return (
+      <TouchableOpacity
+        style={styles.gridItem}
+        onPress={() => router.push(`/album/${item.id}`)}
+        activeOpacity={0.7}
+      >
+        <Image
+          source={artworkUrl(baseUrl, item.id) ?? undefined}
+          style={styles.gridArtwork}
+          contentFit="cover"
+          transition={150}
+        />
+        <Text style={styles.gridTitle} numberOfLines={1}>{item.title}</Text>
+        <Text style={styles.gridMeta} numberOfLines={1}>{item.artist}</Text>
       </TouchableOpacity>
     );
   }
@@ -114,6 +145,7 @@ export default function LibraryScreen() {
           <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.rowMeta}>Artist · {item.album_count} albums</Text>
         </View>
+        <Ionicons name="ellipsis-vertical" size={18} color={Colors.textDim} />
       </TouchableOpacity>
     );
   }
@@ -148,7 +180,7 @@ export default function LibraryScreen() {
         activeOpacity={0.7}
       >
         <View style={[styles.rowArtwork, styles.trackIconBox]}>
-          <Text style={styles.trackIcon}>♪</Text>
+          <Ionicons name="musical-note" size={20} color={Colors.textMuted} />
         </View>
         <View style={styles.rowInfo}>
           <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
@@ -174,18 +206,28 @@ export default function LibraryScreen() {
   }
 
   const data = listData();
+  const gridData = filter === 'albums' ? albums : [];
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/settings')}
+          activeOpacity={0.7}
+          style={styles.avatarBtn}
+        >
+          <View style={styles.avatar}>
+            <Ionicons name="person" size={16} color={Colors.text} />
+          </View>
+        </TouchableOpacity>
         <Text style={styles.title}>Your Library</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/stats')} hitSlop={12}>
-            <Ionicons name="stats-chart-outline" size={22} color={Colors.textMuted} />
+          <TouchableOpacity onPress={() => router.push('/(tabs)/search')} hitSlop={12}>
+            <Ionicons name="search-outline" size={22} color={Colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/search')} hitSlop={12}>
-            <Ionicons name="search-outline" size={22} color={Colors.textMuted} />
+          <TouchableOpacity hitSlop={12}>
+            <Ionicons name="add" size={26} color={Colors.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -193,33 +235,58 @@ export default function LibraryScreen() {
       {/* Filter pills */}
       <FilterPills pills={PILLS} selected={filter} onSelect={(id) => setFilter(id as FilterId)} />
 
-      {/* Downloads header */}
+      {/* Sort row */}
+      <View style={styles.sortRow}>
+        <TouchableOpacity style={styles.sortBtn} activeOpacity={0.7}>
+          <Ionicons name="swap-vertical" size={16} color={Colors.text} />
+          <Text style={styles.sortText}>Recents</Text>
+        </TouchableOpacity>
+        {canGrid && (
+          <TouchableOpacity
+            onPress={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
+            hitSlop={12}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={viewMode === 'grid' ? 'list-outline' : 'grid-outline'}
+              size={20}
+              color={Colors.text}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Downloads / songs count */}
       {filter === 'downloads' && (
-        <View style={styles.downloadsHeader}>
-          <Text style={styles.downloadsCount}>
-            {downloadedTracks.length} {downloadedTracks.length === 1 ? 'song' : 'songs'} downloaded
-          </Text>
-        </View>
+        <Text style={styles.countText}>
+          {downloadedTracks.length} {downloadedTracks.length === 1 ? 'song' : 'songs'} downloaded
+        </Text>
       )}
-
-      {/* Songs count */}
       {filter === 'songs' && songs.length > 0 && (
-        <View style={styles.downloadsHeader}>
-          <Text style={styles.downloadsCount}>{songs.length} songs in library</Text>
-        </View>
+        <Text style={styles.countText}>{songs.length} songs in library</Text>
       )}
 
-      {/* List */}
+      {/* Content */}
       {showLoading ? (
         <ActivityIndicator color={Colors.accent} style={styles.loader} />
       ) : filter === 'downloads' && downloadedTracks.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>⬇</Text>
+          <Ionicons name="arrow-down-circle-outline" size={56} color={Colors.textDim} />
           <Text style={styles.emptyTitle}>No downloads yet</Text>
           <Text style={styles.emptySubtitle}>
             Tap the download icon on any track to save it for offline playback
           </Text>
         </View>
+      ) : viewMode === 'grid' && canGrid && gridData.length > 0 ? (
+        <FlatList
+          data={gridData}
+          keyExtractor={(item) => item.id}
+          numColumns={GRID_COLS}
+          renderItem={renderAlbumGrid}
+          contentContainerStyle={styles.gridContent}
+          showsVerticalScrollIndicator={false}
+          columnWrapperStyle={styles.gridRow}
+        />
       ) : (
         <FlatList
           data={data}
@@ -247,20 +314,49 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingTop: 56,
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  avatarBtn: {
+    flexShrink: 0,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     color: Colors.text,
-    fontSize: FontSize.xxl,
+    fontSize: FontSize.xl,
     fontWeight: '700',
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
     gap: Spacing.md,
     alignItems: 'center',
+  },
+  sortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sortText: {
+    color: Colors.text,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
   },
   loader: {
     marginTop: Spacing.xxl,
@@ -272,7 +368,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 10,
     gap: Spacing.md,
   },
   rowArtwork: {
@@ -283,10 +379,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-  },
-  likedIcon: {
-    color: Colors.text,
-    fontSize: 24,
   },
   rowInfo: {
     flex: 1,
@@ -320,17 +412,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  trackIcon: {
-    color: Colors.textMuted,
-    fontSize: FontSize.lg,
-  },
-  downloadsHeader: {
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-  },
-  downloadsCount: {
+  countText: {
     color: Colors.textMuted,
     fontSize: FontSize.sm,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
   emptyState: {
     flex: 1,
@@ -339,21 +425,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xxl,
     gap: Spacing.sm,
   },
-  emptyIcon: {
-    fontSize: 48,
-    color: Colors.textDim,
-    marginBottom: Spacing.sm,
-  },
   emptyTitle: {
     color: Colors.text,
     fontSize: FontSize.xl,
     fontWeight: '700',
     textAlign: 'center',
+    marginTop: Spacing.sm,
   },
   emptySubtitle: {
     color: Colors.textMuted,
     fontSize: FontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  gridContent: {
+    paddingHorizontal: GRID_PADDING,
+    paddingBottom: Spacing.xxl,
+  },
+  gridRow: {
+    justifyContent: 'flex-start',
+    gap: GRID_GAP,
+    marginBottom: Spacing.md,
+  },
+  gridItem: {
+    width: GRID_ITEM_SIZE,
+    alignItems: 'flex-start',
+  },
+  gridArtwork: {
+    width: GRID_ITEM_SIZE,
+    height: GRID_ITEM_SIZE,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceElevated,
+    marginBottom: 6,
+  },
+  gridTitle: {
+    color: Colors.text,
+    fontSize: FontSize.sm,
+    fontWeight: '500',
+  },
+  gridMeta: {
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    marginTop: 2,
   },
 });

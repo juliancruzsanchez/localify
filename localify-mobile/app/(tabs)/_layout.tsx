@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NowPlayingBar } from '../../components/NowPlayingBar';
-import { Colors, FontSize, Spacing } from '../../constants/theme';
+import { Colors, FontSize } from '../../constants/theme';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function TabBar({ state, descriptors, navigation }: any) {
@@ -41,9 +41,7 @@ function TabBar({ state, descriptors, navigation }: any) {
               activeOpacity={0.7}
             >
               {icon}
-              <Text
-                style={[styles.tabLabel, { color: isFocused ? Colors.text : Colors.textDim }]}
-              >
+              <Text style={[styles.tabLabel, { color: isFocused ? Colors.text : Colors.textDim }]}>
                 {label === 'index' ? 'Home' : label}
               </Text>
             </TouchableOpacity>
@@ -90,6 +88,16 @@ export default function TabLayout() {
           headerShown: false,
           tabBarIcon: ({ focused, color, size }) => (
             <Ionicons name={focused ? 'library' : 'library-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          headerShown: false,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
           ),
         }}
       />

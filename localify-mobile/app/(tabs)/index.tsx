@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -19,16 +19,16 @@ import { useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
 import { useStatsStore } from '../../store/statsStore';
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
+type FilterId = 'all' | 'music';
+const FILTERS: { id: FilterId; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'music', label: 'Music' },
+];
 
 export default function HomeScreen() {
   const router = useRouter();
   const { baseUrl } = useServer();
+  const [filter, setFilter] = useState<FilterId>('all');
   const { data: recentTracks, isLoading: recentLoading } = useRecent(8);
   const { data: snapshot, isLoading: snapshotLoading } = useLibrarySnapshot();
   const playTrack = usePlayerStore((s) => s.playTrack);
@@ -46,95 +46,74 @@ export default function HomeScreen() {
     return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 4);
   }, [statsHistory]);
 
+  const isLoading = recentLoading || snapshotLoading;
+
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header */}
+      {/* Header: avatar + filter chips */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>{greeting()}</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => router.push('/stats')}
-            hitSlop={12}
-            style={styles.statsBtn}
-          >
-            <Ionicons name="stats-chart" size={22} color={Colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push('/connect')}
-            hitSlop={12}
-            style={styles.avatarBtn}
-          >
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={16} color={Colors.textMuted} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/settings')}
+          activeOpacity={0.7}
+          style={styles.avatarBtn}
+        >
+          <View style={styles.avatar}>
+            <Ionicons name="person" size={16} color={Colors.text} />
+          </View>
+        </TouchableOpacity>
 
-      {/* Recently played 2×N grid */}
-      {recentLoading || snapshotLoading ? (
-        <ActivityIndicator color={Colors.accent} style={styles.loader} />
-      ) : recentTracks && recentTracks.length > 0 ? (
-        <View style={styles.recentGrid}>
-          {recentTracks.map((track) => {
-            const artwork = artworkUrl(baseUrl, track.id);
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTERS.map((f) => {
+            const active = filter === f.id;
             return (
               <TouchableOpacity
-                key={track.id}
-                style={styles.recentCard}
-                onPress={() => playTrack(track, recentTracks)}
+                key={f.id}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => setFilter(f.id)}
                 activeOpacity={0.7}
               >
-                <Image
-                  source={artwork ?? undefined}
-                  style={styles.recentArtwork}
-                  contentFit="cover"
-                  transition={150}
-                />
-                <Text style={styles.recentTitle} numberOfLines={2}>
-                  {track.title}
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  {f.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </View>
-      ) : null}
+        </ScrollView>
+      </View>
 
-      {/* Your top tracks (from stats) */}
-      {statsTop.length > 0 && (
-        <>
-          <SectionHeader title="Your top tracks" rightLabel="See all" onRightPress={() => router.push('/stats')} />
-          {statsTop.map((t) => (
+      {/* Compact 2-column recent grid */}
+      {isLoading ? (
+        <ActivityIndicator color={Colors.accent} style={styles.loader} />
+      ) : recentTracks && recentTracks.length > 0 ? (
+        <View style={styles.recentGrid}>
+          {recentTracks.slice(0, 8).map((track) => (
             <TouchableOpacity
-              key={t.id}
-              style={styles.topTrackRow}
-              onPress={() => {
-                const track = snapshot?.tracks.find((tr) => tr.id === t.id);
-                if (track) playTrack(track, snapshot?.tracks);
-              }}
-              activeOpacity={0.7}
+              key={track.id}
+              style={styles.recentCard}
+              onPress={() => playTrack(track, recentTracks)}
+              activeOpacity={0.75}
             >
-              <View style={styles.topTrackArtwork}>
-                <Image
-                  source={artworkUrl(baseUrl, t.id) ?? undefined}
-                  style={styles.topTrackArtwork}
-                  contentFit="cover"
-                  transition={100}
-                />
-              </View>
-              <View style={styles.topTrackInfo}>
-                <Text style={styles.topTrackTitle} numberOfLines={1}>{t.title}</Text>
-                <Text style={styles.topTrackArtist} numberOfLines={1}>{t.artist}</Text>
-              </View>
-              <Text style={styles.topTrackCount}>{t.count}×</Text>
+              <Image
+                source={artworkUrl(baseUrl, track.id) ?? undefined}
+                style={styles.recentArtwork}
+                contentFit="cover"
+                transition={150}
+              />
+              <Text style={styles.recentTitle} numberOfLines={2}>
+                {track.title}
+              </Text>
             </TouchableOpacity>
           ))}
-        </>
-      )}
+        </View>
+      ) : null}
 
       {/* Jump back in */}
       {jumpBackIn.length > 0 ? (
@@ -158,7 +137,41 @@ export default function HomeScreen() {
         </>
       ) : null}
 
-      <View style={styles.bottomPad} />
+      {/* Your top tracks (from local stats) */}
+      {statsTop.length > 0 && (
+        <>
+          <SectionHeader
+            title="Your top tracks"
+            rightLabel="See all"
+            onRightPress={() => router.push('/stats')}
+          />
+          {statsTop.map((t) => (
+            <TouchableOpacity
+              key={t.id}
+              style={styles.topTrackRow}
+              onPress={() => {
+                const track = snapshot?.tracks.find((tr) => tr.id === t.id);
+                if (track) playTrack(track, snapshot?.tracks);
+              }}
+              activeOpacity={0.7}
+            >
+              <Image
+                source={artworkUrl(baseUrl, t.id) ?? undefined}
+                style={styles.topTrackArtwork}
+                contentFit="cover"
+                transition={100}
+              />
+              <View style={styles.topTrackInfo}>
+                <Text style={styles.topTrackTitle} numberOfLines={1}>{t.title}</Text>
+                <Text style={styles.topTrackArtist} numberOfLines={1}>{t.artist}</Text>
+              </View>
+              <Text style={styles.topTrackCount}>{t.count}×</Text>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+
+      <View style={{ height: Spacing.xxl }} />
     </ScrollView>
   );
 }
@@ -169,39 +182,48 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    paddingTop: 56,
+    paddingTop: 0,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingTop: 56,
     paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
-  },
-  greeting: {
-    color: Colors.text,
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    flex: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
-  statsBtn: {
-    padding: 4,
-  },
   avatarBtn: {
-    padding: 2,
+    flexShrink: 0,
   },
   avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: Colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.accent,
+  },
+  filterChipText: {
+    color: Colors.text,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: Colors.background,
   },
   loader: {
     marginVertical: Spacing.xl,
@@ -211,6 +233,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.md,
   },
   recentCard: {
@@ -220,7 +243,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
     borderRadius: Radius.sm,
     overflow: 'hidden',
-    gap: Spacing.sm,
   },
   recentArtwork: {
     width: 56,
@@ -232,7 +254,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: FontSize.sm,
     fontWeight: '600',
-    paddingRight: Spacing.sm,
+    paddingHorizontal: 10,
+  },
+  horizontalList: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.md,
   },
   topTrackRow: {
     flexDirection: 'row',
@@ -242,8 +269,8 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   topTrackArtwork: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: Radius.sm,
     backgroundColor: Colors.surfaceElevated,
     flexShrink: 0,
@@ -266,12 +293,5 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontSize: FontSize.sm,
     fontWeight: '700',
-  },
-  horizontalList: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  bottomPad: {
-    height: Spacing.xxl,
   },
 });
