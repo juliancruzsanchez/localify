@@ -2,6 +2,7 @@ import { Music } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { toAssetUrl } from "@/lib/assetUrl";
+import { AlbumContextMenu } from "./AlbumContextMenu";
 import type { Album } from "@/types";
 
 interface AlbumCardProps {
@@ -13,6 +14,7 @@ export function AlbumCard({ album }: AlbumCardProps) {
   const artworkPath = useArtworkUrl(album.artwork_hash);
 
   return (
+    <AlbumContextMenu album={album}>
     <div
       onClick={() => navigate(`/albums/${album.id}`)}
       className="group cursor-pointer p-4 rounded-lg bg-[var(--color-surface)] hover:bg-[var(--color-surface-elevated)] transition-colors"
@@ -35,5 +37,6 @@ export function AlbumCard({ album }: AlbumCardProps) {
         {album.artist_name} {album.year ? `· ${album.year}` : ""}
       </p>
     </div>
+    </AlbumContextMenu>
   );
 }

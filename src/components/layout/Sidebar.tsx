@@ -7,6 +7,7 @@ import { NavLink } from "react-router";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/lib/constants";
 import { CreatePlaylistDialog } from "@/components/playlists/CreatePlaylistDialog";
+import { PlaylistContextMenu } from "@/components/playlists/PlaylistContextMenu";
 import { usePlayerStore } from "@/store/playerStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
@@ -124,8 +125,8 @@ export function Sidebar() {
         )}
         <nav className="space-y-1">
           {playlists.map((pl) => (
+            <PlaylistContextMenu key={pl.id} playlist={pl}>
             <NavLink
-              key={pl.id}
               to={`/playlists/${pl.id}`}
               title={sidebarCollapsed ? pl.name : undefined}
               className={({ isActive }) =>
@@ -151,6 +152,7 @@ export function Sidebar() {
               </div>
               {!sidebarCollapsed && <span className="truncate">{pl.name}</span>}
             </NavLink>
+            </PlaylistContextMenu>
           ))}
         </nav>
       </div>
