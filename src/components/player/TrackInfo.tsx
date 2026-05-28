@@ -58,16 +58,16 @@ export function TrackInfo() {
         <p className="text-xs text-[var(--color-text-muted)] truncate">
           {currentTrack.artist}
           {currentTrack.format && (
-            <span className="ml-2 inline-flex items-center gap-1">
-              <span className="w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block" />
-              <span className="uppercase">{currentTrack.format}</span>
+            <>
+              <span className="mx-1.5 w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block align-middle" />
+              <span className="uppercase align-middle">{currentTrack.format}</span>
               {currentTrack.sample_rate && (
                 <>
-                  <span className="w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block" />
-                  <span>{formatSampleRate(currentTrack.sample_rate)}</span>
+                  <span className="mx-1.5 w-1 h-1 rounded-full bg-[var(--color-text-dim)] inline-block align-middle" />
+                  <span className="align-middle">{formatSampleRate(currentTrack.sample_rate)}</span>
                 </>
               )}
-            </span>
+            </>
           )}
         </p>
       </div>
