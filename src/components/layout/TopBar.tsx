@@ -1,6 +1,7 @@
 import { Home, Search, Settings, X, Music, Disc3, Mic2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSearchQuery } from "@/queries/search";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
@@ -247,6 +248,12 @@ export function TopBar() {
   const artistOffset = tracks.length + albums.length;
   const seeAllIdx    = tracks.length + albums.length + artists.length;
 
+  const win = getCurrentWindow();
+
+  function handleMinimize() { win.minimize(); }
+  function handleMaximize() { win.toggleMaximize(); }
+  function handleClose()    { win.close(); }
+
   return (
     <header
       style={{
@@ -256,12 +263,42 @@ export function TopBar() {
         borderBottom: "1px solid var(--color-border)",
         display: "flex",
         alignItems: "center",
-        padding: "0 24px",
-        gap: "12px",
+        padding: "0 16px 0 12px",
+        gap: "8px",
         borderRadius: "12px 12px 0 0",
         overflow: "hidden",
       }}
     >
+      {/* Logo + name + window controls */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Logo */}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="text-[var(--color-accent)]">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="12" cy="12" r="4" fill="currentColor" />
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span className="text-white font-bold text-base tracking-tight mr-1">Localify</span>
+
+        {/* Window controls */}
+        <div className="flex items-center gap-1.5 ml-1">
+          <button
+            onClick={handleClose}
+            title="Close"
+            className="w-3.5 h-3.5 rounded-full bg-red-500 hover:brightness-110 transition-all flex items-center justify-center"
+          />
+          <button
+            onClick={handleMinimize}
+            title="Minimize"
+            className="w-3.5 h-3.5 rounded-full bg-yellow-500 hover:brightness-110 transition-all flex items-center justify-center"
+          />
+          <button
+            onClick={handleMaximize}
+            title="Maximize"
+            className="w-3.5 h-3.5 rounded-full bg-green-500 hover:brightness-110 transition-all flex items-center justify-center"
+          />
+        </div>
+      </div>
+
       {/* Home button */}
       <button
         onClick={() => navigate("/")}

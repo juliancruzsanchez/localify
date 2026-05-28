@@ -98,7 +98,7 @@ export default function App() {
           display: "grid",
           gridTemplateColumns: `${sidebarW}px 1fr ${queueCol}`,
           gridTemplateRows: "var(--topbar-height) 1fr var(--player-height)",
-          gridTemplateAreas: '"sidebar topbar topbar" "sidebar main queue" "player player player"',
+          gridTemplateAreas: '"topbar topbar topbar" "sidebar main queue" "player player player"',
           height: "100vh",
           overflow: "hidden",
           transition: "grid-template-columns 200ms ease",

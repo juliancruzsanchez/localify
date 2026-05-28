@@ -30,9 +30,10 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
         ref={setNodeRef}
         to={`/playlists/${playlist.id}`}
         title={collapsed ? playlist.name : undefined}
+        style={{display: "grid", gridTemplateColumns:"auto 1fr"}}
         className={({ isActive }) =>
           cn(
-            "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors",
+            "grid items-center gap-3 px-2 py-2 rounded-md text-sm  transition-colors",
             collapsed ? "justify-center" : "",
             isActive
               ? "bg-white/10 text-white"
@@ -41,7 +42,7 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
           )
         }
       >
-        <div className="w-8 h-8 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] flex items-center justify-center">
+        <div className="w-10 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] flex items-center justify-center">
           {coverDataUrl ? (
             <img
               src={coverDataUrl}
@@ -50,10 +51,17 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
               draggable={false}
             />
           ) : (
-            <ListMusic size={14} className="text-[var(--color-text-dim)]" />
+            <ListMusic size={16} className="text-[var(--color-text-dim)]" />
           )}
         </div>
-        {!collapsed && <span className="truncate min-w-0 leading-tight">{playlist.name}</span>}
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="text-white text-sm font-medium truncate leading-tight">{playlist.name}</p>
+            <p className="text-[var(--color-text-muted)] text-xs truncate">
+              Playlist · {playlist.track_count} {playlist.track_count === 1 ? "song" : "songs"}
+            </p>
+          </div>
+        )}
       </NavLink>
     </PlaylistContextMenu>
   );
@@ -83,11 +91,8 @@ export function Sidebar() {
         borderRadius: "12px",
       }}
     >
-      {/* Logo / toggle */}
-      <div className={cn("flex items-center p-4", sidebarCollapsed ? "justify-center" : "justify-between")}>
-        {!sidebarCollapsed && (
-          <span className="text-white font-bold text-lg tracking-tight">Localify</span>
-        )}
+      {/* Sidebar toggle */}
+      <div className={cn("flex items-center p-4", sidebarCollapsed ? "justify-center" : "justify-end")}>
         <button
           onClick={toggleSidebar}
           className="text-[var(--color-text-muted)] hover:text-white transition-colors p-1 rounded"
@@ -236,33 +241,35 @@ export function Sidebar() {
 
       {/* Expanded album art panel */}
       {albumArtExpanded && !sidebarCollapsed && currentTrack && (
-        <div className="flex-shrink-0 relative" style={{ width: "100%" }}>
-          {/* Collapse button */}
-          <button
-            onClick={() => setAlbumArtExpanded(false)}
-            className="absolute top-2 right-2 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-black/70 transition-colors"
-            aria-label="Collapse album art"
-          >
-            <ChevronDown size={16} />
-          </button>
-          {/* Square album art filling sidebar width */}
-          <div className="w-full aspect-square overflow-hidden bg-[var(--color-surface-elevated)]">
-            {artworkPath ? (
-              <img
-                src={toAssetUrl(artworkPath)}
-                alt={currentTrack.title}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Music size={48} className="text-[var(--color-text-dim)]" />
-              </div>
-            )}
-          </div>
-          {/* Track info below art */}
-          <div className="px-4 py-3">
-            <p className="text-white text-sm font-semibold truncate">{currentTrack.title}</p>
-            <p className="text-[var(--color-text-muted)] text-xs truncate">{currentTrack.artist}</p>
+        <div className="flex-shrink-0 px-3 py-2">
+          <div className="flex items-center gap-3">
+            {/* Album art thumbnail */}
+            <div className="w-12 h-12 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)]">
+              {artworkPath ? (
+                <img
+                  src={toAssetUrl(artworkPath)}
+                  alt={currentTrack.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Music size={20} className="text-[var(--color-text-dim)]" />
+                </div>
+              )}
+            </div>
+            {/* Track info next to art */}
+            <div className="min-w-0 flex-1">
+              <p className="text-white text-sm font-semibold truncate">{currentTrack.title}</p>
+              <p className="text-[var(--color-text-muted)] text-xs truncate">{currentTrack.artist}</p>
+            </div>
+            {/* Collapse button */}
+            <button
+              onClick={() => setAlbumArtExpanded(false)}
+              className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/10 text-[var(--color-text-muted)] hover:text-white transition-colors"
+              aria-label="Collapse album art"
+            >
+              <ChevronDown size={16} />
+            </button>
           </div>
         </div>
       )}
