@@ -12,4 +12,6 @@ pub mod lastfm;
 pub mod tags;
 pub mod audio_devices;
 pub mod cast;
+pub mod remote_stream;
 pub mod plugins;
+pub mod discord_rpc;

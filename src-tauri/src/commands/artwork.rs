@@ -19,6 +19,20 @@ pub async fn get_artwork_path(
     }
 }
 
+/// Return artwork as a base64 data URL (data:image/jpeg;base64,...).
+/// Using a data URL lets the canvas read pixel data without taint restrictions.
+#[tauri::command]
+pub async fn get_artwork_data_url(
+    state: State<'_, AppState>,
+    hash: String,
+) -> Result<String> {
+    let path = state.app_data_dir.join("artwork").join(format!("{}.jpg", hash));
+    let bytes = fs::read(&path)
+        .map_err(|e| AppError::Io(format!("Cannot read artwork: {e}")))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:image/jpeg;base64,{b64}"))
+}
+
 /// Read a cover image file (playlist custom cover) and return it as a
 /// base64-encoded data URL so the frontend can display it without relying on
 /// the Tauri asset protocol (which has scope/permission issues in v2).

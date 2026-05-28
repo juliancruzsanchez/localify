@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { PluginRegistry } from "./PluginRegistry";
+import { register as registerRemoteStreaming } from "../../plugins/com.localify.remote-streaming/src/index";
+import { register as registerDiscordRpc } from "../../plugins/com.localify.discord-rpc/src/index";
 
 const Ctx = createContext<PluginRegistry | null>(null);
 
@@ -15,7 +17,18 @@ export function PluginRegistryProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    registry.initialize().then(() => setReady(true));
+    registry.initialize().then(() => {
+      // Register built-in plugins
+      registry.registerContribution(
+        "com.localify.remote-streaming",
+        registerRemoteStreaming(registry.buildApi("com.localify.remote-streaming")),
+      );
+      registry.registerContribution(
+        "com.localify.discord-rpc",
+        registerDiscordRpc(registry.buildApi("com.localify.discord-rpc")),
+      );
+      setReady(true);
+    });
   }, [registry]);
 
   // Render children immediately so the rest of the app loads while plugins initialise.

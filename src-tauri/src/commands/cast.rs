@@ -51,8 +51,9 @@ pub async fn cast_track(
     let existing_port = *state.cast.server_port.lock().unwrap();
     let port = if existing_port == 0 {
         let db = state.db.clone();
+        let app_data_dir = state.app_data_dir.clone();
         let (p, shutdown_tx) = tokio::spawn(async move {
-            cast::start_file_server(db).await
+            cast::start_file_server(db, app_data_dir).await
         })
         .await
         .map_err(|e| AppError::Audio(e.to_string()))?;

@@ -1,19 +1,24 @@
 import { useState } from "react";
-import { RotateCcw, Radio, CheckCircle2 } from "lucide-react";
+import { RotateCcw, Radio, CheckCircle2, Wifi, Speaker, Loader2, WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useAudioSettingsQuery, useSetEqBands, useSetCrossfade,
-  useAudioOutputDevices, useSelectedAudioDevice, useSetAudioOutputDevice,
+  useAudioOutputDevicesLive, useSelectedAudioDevice, useSetAudioOutputDevice,
 } from "@/queries/audioSettings";
 import { EqualizerUI, PresetSelector, EQ_PRESETS } from "./EqualizerUI";
+
+function isAirPlayDevice(name: string): boolean {
+  return /airplay/i.test(name);
+}
 
 export function AudioSection() {
   const { data: settings, isLoading } = useAudioSettingsQuery();
   const setEqBands      = useSetEqBands();
   const setCrossfade    = useSetCrossfade();
-  const { data: devices = [] }          = useAudioOutputDevices();
+  const { data: devices = [], refetch: refetchDevices } = useAudioOutputDevicesLive();
   const { data: selectedDevice }        = useSelectedAudioDevice();
   const setOutputDevice                 = useSetAudioOutputDevice();
+  const [switchingTo, setSwitchingTo]   = useState<string | null | undefined>(undefined);
 
   // Local draft state — lets us drag freely without a round-trip on every pixel.
   const [localGains,   setLocalGains]   = useState<number[] | null>(null);
@@ -60,7 +65,10 @@ export function AudioSection() {
   const crossfadeEnabled = settings.crossfade_ms > 0;
 
   const handleDeviceSelect = (name: string | null) => {
-    setOutputDevice.mutate(name);
+    setSwitchingTo(name);
+    setOutputDevice.mutate(name, {
+      onSettled: () => setSwitchingTo(undefined),
+    });
   };
 
   return (
@@ -74,31 +82,56 @@ export function AudioSection() {
 
       {/* ── Output device / Casting ──────────────────────────────────────── */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-white uppercase tracking-widest flex items-center gap-2">
-          <Radio size={14} />
-          Output Device
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white uppercase tracking-widest flex items-center gap-2">
+            <Radio size={14} />
+            Output Device
+          </h3>
+          <button
+            onClick={() => refetchDevices()}
+            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-white hover:bg-white/5 transition-colors"
+            title="Refresh device list"
+          >
+            <RefreshCw size={13} />
+          </button>
+        </div>
         <p className="text-xs text-[var(--color-text-muted)] -mt-1">
           AirPlay receivers appear here once discovered by macOS.
         </p>
 
         <div className="space-y-1.5">
-          {/* Default option */}
           <DeviceRow
             name="System Default"
             isSelected={!selectedDevice}
+            isSwitching={switchingTo === null && setOutputDevice.isPending}
             onSelect={() => handleDeviceSelect(null)}
           />
-          {devices.map((d) => (
-            <DeviceRow
-              key={d.name}
-              name={d.name}
-              isDefault={d.is_default}
-              isSelected={selectedDevice === d.name}
-              onSelect={() => handleDeviceSelect(d.name)}
-            />
-          ))}
-          {devices.length === 0 && (
+          {(() => {
+            const offlineName = selectedDevice && !devices.find((d) => d.name === selectedDevice) ? selectedDevice : null;
+            return (
+              <>
+                {offlineName && (
+                  <DeviceRow
+                    name={offlineName}
+                    isSelected
+                    isOffline
+                    onSelect={() => {}}
+                  />
+                )}
+                {devices.map((d) => (
+                  <DeviceRow
+                    key={d.name}
+                    name={d.name}
+                    isDefault={d.is_default}
+                    isSelected={selectedDevice === d.name}
+                    isSwitching={switchingTo === d.name && setOutputDevice.isPending}
+                    onSelect={() => handleDeviceSelect(d.name)}
+                  />
+                ))}
+              </>
+            );
+          })()}
+          {devices.length === 0 && !selectedDevice && (
             <p className="text-xs text-[var(--color-text-dim)] px-1">
               No output devices found.
             </p>
@@ -202,36 +235,59 @@ function DeviceRow({
   name,
   isDefault = false,
   isSelected,
+  isSwitching = false,
+  isOffline = false,
   onSelect,
 }: {
-  name:       string;
-  isDefault?: boolean;
-  isSelected: boolean;
-  onSelect:   () => void;
+  name:         string;
+  isDefault?:   boolean;
+  isSelected:   boolean;
+  isSwitching?: boolean;
+  isOffline?:   boolean;
+  onSelect:     () => void;
 }) {
+  const airPlay = isAirPlayDevice(name);
+
   return (
     <button
       onClick={onSelect}
+      disabled={isOffline}
       className={cn(
         "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-left transition-all",
         "border",
-        isSelected
-          ? "border-[var(--color-accent)]/40 bg-[var(--color-accent)]/10"
-          : "border-[var(--color-border)] hover:bg-white/5",
+        isOffline
+          ? "border-[var(--color-border)] opacity-60 cursor-default"
+          : isSelected
+            ? "border-[var(--color-accent)]/40 bg-[var(--color-accent)]/10"
+            : "border-[var(--color-border)] hover:bg-white/5",
         "bg-[var(--color-surface-elevated)]",
       )}
     >
-      <CheckCircle2
-        size={15}
-        className={cn(
-          "flex-shrink-0 transition-opacity",
-          isSelected ? "text-[var(--color-accent)] opacity-100" : "opacity-0",
-        )}
-      />
-      <span className={cn("flex-1", isSelected ? "text-white font-medium" : "text-[var(--color-text-muted)]")}>
+      {isSwitching ? (
+        <Loader2 size={15} className="flex-shrink-0 text-[var(--color-accent)] animate-spin" />
+      ) : isOffline ? (
+        <WifiOff size={15} className="flex-shrink-0 text-[var(--color-text-dim)]" />
+      ) : (
+        <CheckCircle2
+          size={15}
+          className={cn(
+            "flex-shrink-0 transition-opacity",
+            isSelected ? "text-[var(--color-accent)] opacity-100" : "opacity-0",
+          )}
+        />
+      )}
+      {airPlay ? (
+        <Wifi size={13} className="flex-shrink-0 text-[var(--color-accent)]" />
+      ) : (
+        <Speaker size={13} className={cn("flex-shrink-0", isSelected ? "text-[var(--color-accent)]" : "text-[var(--color-text-dim)]")} />
+      )}
+      <span className={cn("flex-1", isSelected && !isOffline ? "text-white font-medium" : "text-[var(--color-text-muted)]")}>
         {name}
       </span>
-      {isDefault && (
+      {isOffline && (
+        <span className="text-xs text-[var(--color-text-dim)] italic">Reconnecting…</span>
+      )}
+      {isDefault && !isOffline && (
         <span className="text-xs text-[var(--color-text-dim)]">default</span>
       )}
     </button>

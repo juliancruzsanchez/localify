@@ -1,4 +1,5 @@
-import { Shuffle, Repeat, Repeat1, ListMusic } from "lucide-react";
+import { Shuffle, Repeat, Repeat1, ListMusic, Activity } from "lucide-react";
+import { useNavigate } from "react-router";
 import { usePlayerStore } from "@/store/playerStore";
 import { useUiStore } from "@/store/uiStore";
 import { TrackInfo } from "@/components/player/TrackInfo";
@@ -13,6 +14,7 @@ import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 export function NowPlayingBar() {
   const { shuffleEnabled, repeatMode, toggleShuffle, cycleRepeat } = usePlayerStore();
   const { queueOpen, toggleQueue } = useUiStore();
+  const navigate = useNavigate();
   const pluginRegistry = usePluginRegistrySnapshot();
   const pluginActions = pluginRegistry.getNowPlayingActions();
 
@@ -59,10 +61,18 @@ export function NowPlayingBar() {
         <SeekBar />
       </div>
 
-      {/* Right: Volume + Cast + Plugin actions + Queue toggle */}
+      {/* Right: Volume + Cast + Visualizer + Plugin actions + Queue toggle */}
       <div className="flex items-center justify-end gap-3 w-48">
         <VolumeSlider />
         <CastButton />
+        <button
+          onClick={() => navigate("/visualizer")}
+          className="transition-colors text-[var(--color-text-muted)] hover:text-white flex-shrink-0"
+          aria-label="Visualizer"
+          title="Visualizer"
+        >
+          <Activity size={18} />
+        </button>
         {pluginActions.map((action) => (
           <button
             key={action.id}

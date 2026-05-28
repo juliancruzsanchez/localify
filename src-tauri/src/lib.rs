@@ -6,8 +6,10 @@ mod scanner;
 mod commands;
 mod lastfm;
 mod cast;
+mod discord_rpc;
 mod plugins;
 mod media_control;
+mod watcher;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -27,15 +29,19 @@ use commands::playlists::{
     get_playlists, get_playlist, create_playlist_cmd, update_playlist_cmd,
     delete_playlist_cmd, get_playlist_tracks_cmd, add_track_to_playlist_cmd,
     remove_track_from_playlist_cmd, reorder_playlist_track_cmd, set_playlist_cover_cmd,
+    export_playlist_m3u8,
 };
 use commands::search::search_library;
-use commands::artwork::{get_artwork_path, get_cover_image};
+use commands::artwork::{get_artwork_path, get_artwork_data_url, get_cover_image};
 use commands::home::{get_recently_played, get_genre_mixes};
 use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres};
 use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
 use commands::tags::{get_track_tags, update_track_tags};
-use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device};
+use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device, db_load_device};
 use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_cast, get_cast_session};
+use commands::remote_stream::{remote_stream_start, remote_stream_stop, remote_stream_status};
+use commands::discord_rpc::{discord_rpc_enable, discord_rpc_disable, discord_rpc_get_status};
+use discord_rpc::DiscordRpcHandle;
 use commands::plugins::{
     plugin_list, plugin_install, plugin_uninstall,
     plugin_get_settings, plugin_save_settings,
@@ -64,6 +70,13 @@ pub fn run() {
             let (media_update_tx, media_update_rx) = crossbeam_channel::unbounded();
 
             let player = PlayerHandle::new(Some(media_update_tx));
+            *player.viz_app_handle.lock().unwrap() = Some(app.handle().clone());
+
+            // Restore the persisted output device so the reconnect watcher can
+            // begin monitoring it immediately after startup.
+            if let Ok(Some(saved)) = db_load_device(&conn) {
+                *player.selected_device.lock().unwrap() = Some(saved);
+            }
 
             // Set up macOS media control (no-op on other platforms)
             let remote_cmd_tx = player.cmd_tx.clone();
@@ -79,13 +92,32 @@ pub fn run() {
                 log::warn!("[plugins] Error during startup load: {e}");
             }
 
+            let db = Arc::new(Mutex::new(conn));
+
+            let library_paths: Vec<String> = {
+                let c = db.lock().unwrap();
+                let mut stmt = c.prepare("SELECT path FROM library_paths").unwrap_or_else(|_| c.prepare("SELECT 1 WHERE 0").unwrap());
+                stmt.query_map([], |row| row.get(0))
+                    .map(|rows| rows.flatten().collect())
+                    .unwrap_or_default()
+            };
+
+            let lib_watcher = watcher::LibraryWatcher::new(
+                library_paths,
+                db.clone(),
+                app_data_dir.clone(),
+                app.handle().clone(),
+            );
+
             app.manage(AppState {
-                db: Arc::new(Mutex::new(conn)),
+                db,
                 player,
                 app_data_dir,
                 cast: CastState::new(),
                 plugins: plugin_registry,
                 media_control: Some(media_control),
+                watcher: Arc::new(Mutex::new(Some(lib_watcher))),
+                discord_rpc: DiscordRpcHandle::new(),
             });
 
             Ok(())
@@ -131,10 +163,12 @@ pub fn run() {
             remove_track_from_playlist_cmd,
             reorder_playlist_track_cmd,
             set_playlist_cover_cmd,
+            export_playlist_m3u8,
             // Search
             search_library,
             // Artwork
             get_artwork_path,
+            get_artwork_data_url,
             get_cover_image,
             // Home
             get_recently_played,
@@ -162,6 +196,14 @@ pub fn run() {
             cast_track,
             stop_cast,
             get_cast_session,
+            // Remote Streaming
+            remote_stream_start,
+            remote_stream_stop,
+            remote_stream_status,
+            // Discord Rich Presence
+            discord_rpc_enable,
+            discord_rpc_disable,
+            discord_rpc_get_status,
             // Plugins
             plugin_list,
             plugin_install,

@@ -7,6 +7,7 @@ use crate::db::playlists::{
 };
 use crate::error::{AppError, Result};
 use crate::state::AppState;
+use std::fmt::Write as FmtWrite;
 
 #[tauri::command]
 pub async fn get_playlists(state: State<'_, AppState>) -> Result<Vec<Playlist>> {
@@ -83,6 +84,38 @@ pub async fn reorder_playlist_track_cmd(
 ) -> Result<()> {
     let conn = state.db.lock().unwrap();
     reorder_playlist_track(&conn, &entry_id, new_position)
+}
+
+#[tauri::command]
+pub async fn export_playlist_m3u8(
+    state: State<'_, AppState>,
+    playlist_id: String,
+    dest_path: String,
+) -> Result<()> {
+    let (playlist, tracks) = {
+        let conn = state.db.lock().unwrap();
+        let p = get_playlist_by_id(&conn, &playlist_id)?;
+        let t = get_playlist_tracks(&conn, &playlist_id)?;
+        (p, t)
+    };
+
+    let mut out = String::new();
+    out.push_str("#EXTM3U\n");
+    out.push_str(&format!("#PLAYLIST:{}\n", playlist.name));
+    for pt in &tracks {
+        let t = &pt.track;
+        let duration_secs = t.duration_secs as i64;
+        let label = format!("{} - {}", t.artist, t.title);
+        writeln!(out, "#EXTINF:{},{}", duration_secs, label)
+            .map_err(|e| AppError::Io(e.to_string()))?;
+        writeln!(out, "{}", t.file_path)
+            .map_err(|e| AppError::Io(e.to_string()))?;
+    }
+
+    std::fs::write(&dest_path, out.as_bytes())
+        .map_err(|e| AppError::Io(format!("Cannot write M3U8: {e}")))?;
+
+    Ok(())
 }
 
 /// Set (or clear) a playlist's custom cover image.

@@ -55,7 +55,7 @@ export function TrackInfo() {
 
       <div className="min-w-0">
         <p className="text-sm font-medium text-white truncate">{currentTrack.title}</p>
-        <p className="text-xs text-[var(--color-text-muted)] truncate">
+        <p className="text-xs text-[var(--color-text-muted)]">
           {currentTrack.artist}
           {currentTrack.format && (
             <>

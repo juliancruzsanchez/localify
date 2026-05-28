@@ -27,18 +27,32 @@ pub async fn add_library_path(
     let canonical_str = canonical.to_string_lossy().to_string();
     let id = Uuid::new_v4().to_string();
 
-    let conn = state.db.lock().unwrap();
-    conn.execute(
-        "INSERT OR IGNORE INTO library_paths (id, path) VALUES (?1, ?2)",
-        rusqlite::params![id, canonical_str],
-    )?;
+    let (row, all_paths) = {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO library_paths (id, path) VALUES (?1, ?2)",
+            rusqlite::params![id, canonical_str],
+        )?;
 
-    // Get the actual row (may have been inserted previously)
-    let row = conn.query_row(
-        "SELECT id, path FROM library_paths WHERE path = ?1",
-        rusqlite::params![canonical_str],
-        |row| Ok(LibraryPath { id: row.get(0)?, path: row.get(1)? }),
-    )?;
+        let row = conn.query_row(
+            "SELECT id, path FROM library_paths WHERE path = ?1",
+            rusqlite::params![canonical_str],
+            |row| Ok(LibraryPath { id: row.get(0)?, path: row.get(1)? }),
+        )?;
+
+        let mut stmt = conn.prepare("SELECT path FROM library_paths")?;
+        let paths: Vec<String> = stmt.query_map([], |r| r.get(0))?
+            .flatten()
+            .collect();
+
+        (row, paths)
+    };
+
+    if let Ok(mut guard) = state.watcher.lock() {
+        if let Some(w) = guard.as_mut() {
+            w.update_paths(all_paths);
+        }
+    }
 
     Ok(row)
 }
@@ -48,8 +62,22 @@ pub async fn remove_library_path(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<()> {
-    let conn = state.db.lock().unwrap();
-    conn.execute("DELETE FROM library_paths WHERE id = ?1", rusqlite::params![id])?;
+    let all_paths = {
+        let conn = state.db.lock().unwrap();
+        conn.execute("DELETE FROM library_paths WHERE id = ?1", rusqlite::params![id])?;
+        let mut stmt = conn.prepare("SELECT path FROM library_paths")?;
+        let paths: Vec<String> = stmt.query_map([], |r| r.get(0))?
+            .flatten()
+            .collect();
+        paths
+    };
+
+    if let Ok(mut guard) = state.watcher.lock() {
+        if let Some(w) = guard.as_mut() {
+            w.update_paths(all_paths);
+        }
+    }
+
     Ok(())
 }
 

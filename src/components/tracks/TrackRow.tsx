@@ -46,7 +46,7 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
       {...attributes}
       data-track-id={track.id}
       style={style}
-      onDoubleClick={() => !(isActive && isPlaying) && playTrack(track, queue, index)}
+      onClick={handlePlay}
       className={cn(
         "group flex items-center gap-3 px-4 py-2 rounded-md text-sm hover:bg-white/5 cursor-default transition-colors",
         isActive && "bg-white/10",
@@ -63,7 +63,7 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
           )}
         </span>
         <button
-          onClick={handlePlay}
+          onClick={(e) => { e.stopPropagation(); handlePlay(); }}
           className="hidden group-hover:block text-white"
           aria-label={`Play ${track.title}`}
         >

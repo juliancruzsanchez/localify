@@ -22,7 +22,7 @@ pub async fn play_track(
     track_id: String,
     start_ms: Option<u64>,
 ) -> Result<()> {
-    let (file_path, title, artist, album, artwork_file) = {
+    let (file_path, title, artist, album, artwork_file, duration_ms) = {
         let conn = state.db.lock().unwrap();
         let track = get_track_by_id(&conn, &track_id)?;
         // Increment play count
@@ -36,6 +36,7 @@ pub async fn play_track(
                 .to_string_lossy()
                 .to_string()
         });
+        let dur_ms = (track.duration_secs * 1000.0) as i64;
 
         (
             track.file_path,
@@ -43,6 +44,7 @@ pub async fn play_track(
             track.artist,
             track.album_title.unwrap_or_default(),
             artwork_file,
+            dur_ms,
         )
     };
 
@@ -50,13 +52,14 @@ pub async fn play_track(
         file_path,
         track_id: track_id.clone(),
         start_ms: start_ms.unwrap_or(0),
-        title,
-        artist,
-        album,
+        title:    title.clone(),
+        artist:   artist.clone(),
+        album:    album.clone(),
         artwork_file,
     });
 
     let start = start_ms.unwrap_or(0);
+    state.discord_rpc.set_playing(&title, &artist, &album, start as i64, duration_ms);
     for hook in state.plugins.player_hooks() {
         let _ = hook.on_play(&track_id, start).await;
     }
@@ -69,6 +72,13 @@ pub async fn pause(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Pause);
     let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
     let pos = state.player.position_ms.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    // Look up track metadata for Discord RPC
+    {
+        let conn = state.db.lock().unwrap();
+        if let Ok(track) = get_track_by_id(&conn, &track_id) {
+            state.discord_rpc.set_paused(&track.title, &track.artist, &track.album_title.unwrap_or_default());
+        }
+    }
     for hook in state.plugins.player_hooks() {
         let _ = hook.on_pause(&track_id, pos).await;
     }
@@ -79,9 +89,16 @@ pub async fn pause(state: State<'_, AppState>) -> Result<()> {
 pub async fn resume(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Resume);
     let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
-    let pos = state.player.position_ms.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    let pos_ms = state.player.position_ms.load(std::sync::atomic::Ordering::Relaxed);
+    let dur_ms = state.player.duration_ms.load(std::sync::atomic::Ordering::Relaxed);
+    {
+        let conn = state.db.lock().unwrap();
+        if let Ok(track) = get_track_by_id(&conn, &track_id) {
+            state.discord_rpc.set_playing(&track.title, &track.artist, &track.album_title.unwrap_or_default(), pos_ms, dur_ms);
+        }
+    }
     for hook in state.plugins.player_hooks() {
-        let _ = hook.on_resume(&track_id, pos).await;
+        let _ = hook.on_resume(&track_id, pos_ms as u64).await;
     }
     Ok(())
 }
@@ -112,6 +129,7 @@ pub async fn set_volume(state: State<'_, AppState>, volume: u8) -> Result<()> {
 #[tauri::command]
 pub async fn stop_playback(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Stop);
+    state.discord_rpc.clear();
     for hook in state.plugins.player_hooks() {
         let _ = hook.on_stop().await;
     }

@@ -10,6 +10,8 @@ import { PlaylistDetailView } from "./views/PlaylistDetailView";
 import { SearchView } from "./views/SearchView";
 import { SettingsView } from "./views/SettingsView";
 import { LikedSongsView } from "./views/LikedSongsView";
+import { PluginRouteView } from "./views/PluginRouteView";
+import { VisualizerView } from "./views/VisualizerView";
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +28,8 @@ export const router = createBrowserRouter([
       { path: "playlists/:id", element: <PlaylistDetailView /> },
       { path: "settings", element: <SettingsView /> },
       { path: "liked", element: <LikedSongsView /> },
+      { path: "visualizer", element: <VisualizerView /> },
+      { path: "plugins/*", element: <PluginRouteView /> },
     ],
   },
 ]);

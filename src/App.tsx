@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { Outlet } from "react-router";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
+import { Outlet, useNavigate } from "react-router";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { DndContext, DragOverlay } from "@dnd-kit/core";
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { NowPlayingBar } from "@/components/layout/NowPlayingBar";
@@ -14,6 +13,7 @@ import { usePlayerStore } from "@/store/playerStore";
 import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
 import { useAddTrackToPlaylist } from "@/queries/playlists";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/lib/constants";
+import { setPluginNavigate } from "@/plugins/navigation";
 import type { PlayerState, Track } from "@/types";
 
 const QUEUE_PANEL_WIDTH = 280;
@@ -23,6 +23,13 @@ export default function App() {
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
   const [activeTrack, setActiveTrack] = useState<Track | null>(null);
   const { mutate: addTrackToPlaylist } = useAddTrackToPlaylist();
+  const navigate = useNavigate();
+  setPluginNavigate((path) => navigate(path));
+
+  // Require a 250 ms hold before drag activates; short taps fire click instead.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
 
   // Last.fm scrobbling (no-ops when not connected)
   useLastFmScrobbling();
@@ -70,9 +77,11 @@ export default function App() {
         // for a brief window — overwriting the optimistic "true" we set in
         // playTrack() would cause a visible flash to "paused".
         const inTransition = Date.now() - lastPlayStartedAt < 600;
-        if (!inTransition) setIsPlaying(state.is_playing);
-        if (state.position_ms >= 0) setPosition(state.position_ms);
-        if (state.duration_ms > 0) setDuration(state.duration_ms);
+        if (!inTransition) {
+          setIsPlaying(state.is_playing);
+          if (state.position_ms >= 0) setPosition(state.position_ms);
+          if (state.duration_ms > 0) setDuration(state.duration_ms);
+        }
       } catch {
         // Not in Tauri context (tests / browser preview)
       }
@@ -83,7 +92,7 @@ export default function App() {
   const queueCol = queueOpen ? `${QUEUE_PANEL_WIDTH}px` : "0px";
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div
         style={{
           display: "grid",

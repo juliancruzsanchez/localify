@@ -1,4 +1,4 @@
-import { Home, Music, Disc3, Mic2, ListMusic, Heart, ChevronLeft, ChevronRight, Plus, ChevronDown } from "lucide-react";
+import { Home, Music, Disc3, Mic2, ListMusic, Heart, ChevronLeft, ChevronRight, Plus, ChevronDown, Loader2 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { useUiStore } from "@/store/uiStore";
 import { usePlaylistsQuery } from "@/queries/playlists";
@@ -14,6 +14,7 @@ import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { useCoverImage } from "@/hooks/useCoverImage";
+import { useLibraryWatcher } from "@/hooks/useLibraryWatcher";
 import type { Playlist } from "@/types";
 
 function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapsed: boolean }) {
@@ -66,6 +67,7 @@ export function Sidebar() {
   const artworkPath = useArtworkUrl(currentTrack?.artwork_hash);
   const pluginRegistry = usePluginRegistrySnapshot();
   const pluginSidebarItems = pluginRegistry.getSidebarItems();
+  const { isScanning, lastResult } = useLibraryWatcher();
 
   const width = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
@@ -205,6 +207,32 @@ export function Sidebar() {
           )}
         </NavLink>
       </div>
+
+      {/* Library watcher status */}
+      {(isScanning || lastResult !== null) && (
+        <div
+          className="flex-shrink-0 flex items-center gap-1.5 px-3"
+          style={{ paddingTop: 6, paddingBottom: 6, opacity: 1, transition: "opacity 200ms" }}
+        >
+          {isScanning && (
+            <Loader2
+              size={11}
+              className="animate-spin flex-shrink-0"
+              style={{ color: "var(--color-text-muted)" }}
+            />
+          )}
+          <span
+            className="truncate"
+            style={{ fontSize: 11, color: "var(--color-text-muted)", lineHeight: "1.4" }}
+          >
+            {isScanning
+              ? "Updating library…"
+              : lastResult !== null
+                ? `Added ${lastResult.added}· Updated ${lastResult.updated}`
+                : null}
+          </span>
+        </div>
+      )}
 
       {/* Expanded album art panel */}
       {albumArtExpanded && !sidebarCollapsed && currentTrack && (

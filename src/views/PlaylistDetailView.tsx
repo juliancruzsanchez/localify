@@ -1,7 +1,8 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useParams } from "react-router";
-import { Play, Pencil, Camera, X, Check, Loader2 } from "lucide-react";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { Play, Pencil, Camera, X, Check, Loader2, Download } from "lucide-react";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { usePlaylistQuery, usePlaylistTracksQuery, useReorderPlaylistTrack, useUpdatePlaylist, useSetPlaylistCover } from "@/queries/playlists";
 import { usePlayerStore } from "@/store/playerStore";
 import { formatTime } from "@/lib/formatTime";
@@ -58,6 +59,24 @@ export function PlaylistDetailView() {
   const removeCover = () => {
     if (!playlist) return;
     setCover.mutate({ id: playlist.id, sourcePath: null });
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const exportM3u8 = async () => {
+    if (!playlist) return;
+    const destPath = await saveFileDialog({
+      defaultPath: `${playlist.name}.m3u8`,
+      filters: [{ name: "Playlist", extensions: ["m3u8"] }],
+    });
+    if (!destPath) return;
+    setExporting(true);
+    try {
+      await invoke("export_playlist_m3u8", { playlistId: playlist.id, destPath });
+      console.log("[Localify] Exported playlist to", destPath);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const tracks = playlistTracks.map((pt) => pt.track);
@@ -197,14 +216,25 @@ export function PlaylistDetailView() {
         </div>
       </div>
 
-      {/* Play button */}
+      {/* Play button + Export button */}
       {tracks.length > 0 && (
-        <div className="px-8 mb-4">
+        <div className="px-8 mb-4 flex items-center gap-3">
           <button
             onClick={() => playTrack(tracks[0], tracks, 0)}
             className="w-14 h-14 rounded-full bg-[var(--color-accent)] flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
           >
             <Play size={24} fill="black" className="text-black ml-1" />
+          </button>
+          <button
+            onClick={exportM3u8}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-[var(--color-text-muted)] hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+            title="Export as M3U8…"
+          >
+            {exporting
+              ? <Loader2 size={16} className="animate-spin" />
+              : <Download size={16} />}
+            Export M3U8
           </button>
         </div>
       )}

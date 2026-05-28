@@ -53,8 +53,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         queueIndex: index,
         isPlaying: true,
         positionMs: 0,
+        durationMs: Math.round(track.duration_secs * 1000),
         // Record when this play started so the polling loop can suppress
-        // is_playing sync for 600 ms while the Rust audio loop bootstraps.
+        // position/duration/is_playing sync for 600 ms while the Rust audio
+        // loop bootstraps the new track (the atomic may still hold the
+        // previous track's position until the Play command is processed).
         _lastPlayStartedAt: Date.now(),
       });
     } catch (e) {

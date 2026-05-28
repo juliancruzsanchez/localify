@@ -1,0 +1,1337 @@
+import { useEffect, useRef, useCallback } from "react";
+import type React from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import type { VisualizerColors } from "@/hooks/useVisualizerColors";
+import { DEFAULT_COLORS } from "@/hooks/useVisualizerColors";
+
+const BAR_COUNT = 32;
+
+export type Mode = "bars" | "alchemy" | "plasma" | "vortex" | "radial" | "synthgrid" | "tunnel" | "ocean" | "artwork";
+export const MODES: Mode[] = ["bars", "alchemy", "plasma", "vortex", "radial", "synthgrid", "tunnel", "ocean", "artwork"];
+export const MODE_LABELS: Record<Mode, string> = {
+  bars:      "SPECTRUM",
+  alchemy:   "ALCHEMY",
+  plasma:    "PLASMA STORM",
+  vortex:    "VORTEX",
+  radial:    "RADIAL BLOOM",
+  synthgrid: "SYNTHWAVE",
+  tunnel:    "TUNNEL",
+  ocean:     "SOUND OCEAN",
+  artwork:   "ALBUM AURA",
+};
+
+// ─── color helpers ─────────────────────────────────────────────────────────────
+
+function hexToHue(hex: string): number {
+  if (!hex || hex.length < 7) return 0;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  if (d === 0) return 0;
+  let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return ((h * 60) + 360) % 360;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r
+    ? ((g - b) / d + (g < b ? 6 : 0)) / 6
+    : max === g ? ((b - r) / d + 2) / 6
+    : ((r - g) / d + 4) / 6;
+  return [h * 360, s, l];
+}
+
+function extractColors(img: HTMLImageElement): [number, number, number][] {
+  const FALLBACK: [number, number, number][] = [[0, 100, 200], [140, 0, 220], [220, 80, 0]];
+  try {
+    const SZ  = 24;
+    const c   = document.createElement("canvas");
+    c.width = c.height = SZ;
+    const ctx = c.getContext("2d");
+    if (!ctx) return FALLBACK;
+    ctx.drawImage(img, 0, 0, SZ, SZ);
+    const { data } = ctx.getImageData(0, 0, SZ, SZ);
+
+    const buckets: [number, number, number][][] = Array.from({ length: 12 }, () => []);
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      if (a < 200) continue;
+      const [h, s, l] = rgbToHsl(r, g, b);
+      if (l < 0.10 || l > 0.90 || s < 0.12) continue;
+      buckets[Math.floor(h / 30) % 12].push([r, g, b]);
+    }
+
+    const sorted = buckets
+      .map((px, i) => ({ i, count: px.length, px }))
+      .filter(bk => bk.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    const result: [number, number, number][] = sorted.slice(0, 3).map(({ px }) => [
+      Math.round(px.reduce((s, p) => s + p[0], 0) / px.length),
+      Math.round(px.reduce((s, p) => s + p[1], 0) / px.length),
+      Math.round(px.reduce((s, p) => s + p[2], 0) / px.length),
+    ]);
+
+    while (result.length < 3) result.push([80, 80, 180]);
+    return result;
+  } catch {
+    return FALLBACK;
+  }
+}
+
+interface LightningBolt { points: [number, number][]; hue: number; width: number; alpha: number; }
+
+interface Props {
+  className?: string;
+  style?: React.CSSProperties;
+  colors?: VisualizerColors;
+  artworkHash?: string | null;
+  mode?: Mode;
+  onModeChange?: (mode: Mode) => void;
+}
+
+export function Visualizer({ className, style, colors, artworkHash, mode, onModeChange }: Props) {
+  const canvasRef         = useRef<HTMLCanvasElement>(null);
+  const bandDataRef       = useRef<number[]>(new Array(BAR_COUNT).fill(0));
+  const displayedRef      = useRef<number[]>(new Array(BAR_COUNT).fill(0));
+  const peaksRef          = useRef<number[]>(new Array(BAR_COUNT).fill(0));
+  const rafRef            = useRef<number>(0);
+  const modeIndexRef      = useRef<number>(0);
+  const labelTimerRef     = useRef<number>(0);
+  const alchemyTRef       = useRef<number>(0);
+  const vortexAngleRef    = useRef<number>(0);
+  const lightningRef      = useRef<LightningBolt[]>([]);
+  const lightningTRef     = useRef<number>(0);
+  const synthgridPhaseRef = useRef<number>(0);
+  const tunnelPhaseRef    = useRef<number>(0);
+  const tunnelAngleRef    = useRef<number>(0);
+  const oceanPhaseRef     = useRef<number>(0);
+  const beatRef           = useRef<{ bass: number; time: number }>({ bass: 0, time: 0 });
+  const colorsRef         = useRef<VisualizerColors>(colors ?? DEFAULT_COLORS);
+  const onModeChangeRef   = useRef(onModeChange);
+  // artwork mode refs
+  const artworkImgRef     = useRef<HTMLImageElement | null>(null);
+  const artworkBlurredRef = useRef<HTMLCanvasElement | null>(null);
+  const artworkColorsRef  = useRef<[number, number, number][]>([[0, 100, 200], [140, 0, 220], [220, 80, 0]]);
+
+  useEffect(() => { colorsRef.current = colors ?? DEFAULT_COLORS; }, [colors]);
+  useEffect(() => { onModeChangeRef.current = onModeChange; }, [onModeChange]);
+  useEffect(() => {
+    if (mode === undefined) return;
+    const idx = MODES.indexOf(mode);
+    if (idx !== -1) modeIndexRef.current = idx;
+  }, [mode]);
+
+  // Load artwork from embedded file data via Tauri (returns a base64 data URL).
+  // Data URLs are same-origin, so canvas getImageData works without taint errors.
+  useEffect(() => {
+    if (!artworkHash) return;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const dataUrl = await invoke<string>("get_artwork_data_url", { hash: artworkHash });
+        if (cancelled) return;
+
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+
+          artworkColorsRef.current = extractColors(img);
+
+          // Pre-render blurred background once (not per-frame)
+          const blur = document.createElement("canvas");
+          blur.width = blur.height = 400;
+          const bctx = blur.getContext("2d");
+          if (bctx) {
+            bctx.filter = "blur(28px) brightness(0.28)";
+            bctx.drawImage(img, -40, -40, 480, 480);
+            bctx.filter = "none";
+            const vg = bctx.createRadialGradient(200, 200, 60, 200, 200, 260);
+            vg.addColorStop(0, "transparent");
+            vg.addColorStop(1, "rgba(0,0,0,0.65)");
+            bctx.fillStyle = vg;
+            bctx.fillRect(0, 0, 400, 400);
+          }
+          artworkBlurredRef.current = blur;
+          artworkImgRef.current     = img;
+        };
+        img.src = dataUrl;
+      } catch {
+        // invoke fails in browser-preview mode (no Tauri runtime)
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+      artworkImgRef.current     = null;
+      artworkBlurredRef.current = null;
+    };
+  }, [artworkHash]);
+
+  const handleClick = useCallback(() => {
+    modeIndexRef.current = (modeIndexRef.current + 1) % MODES.length;
+    labelTimerRef.current = Date.now();
+    onModeChangeRef.current?.(MODES[modeIndexRef.current]);
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listen<number[]>("visualizer-update", (event) => {
+      const p = event.payload;
+      if (Array.isArray(p) && p.length === BAR_COUNT) bandDataRef.current = p;
+    });
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    function ensureSize(ctx: CanvasRenderingContext2D): [number, number] {
+      const dpr = window.devicePixelRatio || 1;
+      const w   = canvas!.clientWidth;
+      const h   = canvas!.clientHeight;
+      const pw  = Math.round(w * dpr);
+      const ph  = Math.round(h * dpr);
+      if (canvas!.width !== pw || canvas!.height !== ph) {
+        canvas!.width  = pw;
+        canvas!.height = ph;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      return [w, h];
+    }
+
+    function drawLabel(ctx: CanvasRenderingContext2D, w: number, h: number) {
+      const elapsed = Date.now() - labelTimerRef.current;
+      if (elapsed > 2000) return;
+      const alpha = elapsed < 1000 ? 1 : 1 - (elapsed - 1000) / 1000;
+      if (alpha <= 0) return;
+      const mode  = MODES[modeIndexRef.current];
+      const label = MODE_LABELS[mode];
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.font        = "bold 13px 'SF Mono', 'Fira Code', monospace";
+      ctx.textAlign   = "center";
+      const mx = w / 2;
+      const my = h - 28;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.beginPath();
+      ctx.roundRect(mx - tw / 2 - 12, my - 14, tw + 24, 22, 6);
+      ctx.fill();
+      ctx.fillStyle   = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur  = 4;
+      ctx.fillText(label, mx, my);
+      ctx.restore();
+    }
+
+    function beatDetect(bass: number): boolean {
+      const b      = beatRef.current;
+      const isBeat = bass > b.bass * 1.3 && bass > 0.35 && Date.now() - b.time > 200;
+      if (bass > b.bass) { b.bass = bass; b.time = isBeat ? Date.now() : b.time; }
+      else b.bass *= 0.96;
+      return isBeat;
+    }
+
+    // ─── BARS ─────────────────────────────────────────────────────────────────
+
+    function drawBars(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["bars"]) {
+      const bass     = b[0];
+      const beat     = beatDetect(bass);
+      const primHue  = hexToHue(c.primary);
+      const secHue   = hexToHue(c.secondary);
+      const [pr, pg, pb] = hexToRgb(c.primary);
+
+      ctx.fillStyle = beat ? "rgba(0,20,30,1)" : "#000";
+      ctx.fillRect(0, 0, w, h);
+      if (beat) {
+        const fl = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h));
+        fl.addColorStop(0, `rgba(${pr},${pg},${pb},0.22)`);
+        fl.addColorStop(1, "transparent");
+        ctx.fillStyle = fl;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      ctx.save();
+      ctx.strokeStyle = `hsla(${primHue},60%,30%,0.10)`;
+      ctx.lineWidth   = 0.5;
+      const gridStep  = 40;
+      for (let x = 0; x < w; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+      for (let y = 0; y < h; y += gridStep) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      ctx.restore();
+
+      const peaks = peaksRef.current;
+      const GAP   = 2;
+      const bw    = (w - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
+      const mirH  = h * 0.22;
+      const areaH = h - mirH;
+
+      for (let i = 0; i < BAR_COUNT; i++) {
+        if (b[i] > peaks[i]) peaks[i] = b[i];
+        else peaks[i] = Math.max(0, peaks[i] - 0.007);
+
+        const x    = i * (bw + GAP);
+        const barH = b[i] * areaH;
+        const y    = areaH - barH;
+
+        if (barH > 1) {
+          const hue = primHue + (i / BAR_COUNT) * 40;
+          const g   = ctx.createLinearGradient(0, y, 0, areaH);
+          g.addColorStop(0,   `hsl(${hue},100%,72%)`);
+          g.addColorStop(0.3, `hsl(${hue - 10},90%,55%)`);
+          g.addColorStop(1,   `hsl(${secHue + (i / BAR_COUNT) * 20},80%,30%)`);
+          ctx.fillStyle  = g;
+          ctx.shadowColor = `hsl(${hue},100%,60%)`;
+          ctx.shadowBlur  = 10 + b[i] * 18;
+          ctx.fillRect(x, y, bw, barH);
+          ctx.shadowBlur  = 0;
+        }
+
+        if (peaks[i] > 0.02) {
+          const peakY = areaH - peaks[i] * areaH - 2;
+          ctx.shadowColor = c.peak;
+          ctx.shadowBlur  = 8;
+          ctx.fillStyle   = peaks[i] > 0.8 ? "#fff" : c.peak;
+          ctx.fillRect(x, peakY, bw, 2);
+          ctx.shadowBlur  = 0;
+        }
+      }
+
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.translate(0, areaH * 2);
+      ctx.scale(1, -1);
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const x    = i * (bw + GAP);
+        const barH = Math.min(b[i] * areaH, mirH);
+        const y    = areaH - barH;
+        const hue  = primHue + (i / BAR_COUNT) * 40;
+        const g    = ctx.createLinearGradient(0, y, 0, areaH);
+        g.addColorStop(0, `hsl(${hue},100%,72%)`);
+        g.addColorStop(1, `hsl(${secHue},80%,30%)`);
+        ctx.fillStyle = g;
+        ctx.fillRect(x, y, bw, barH);
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.04;
+      ctx.fillStyle   = "#000";
+      for (let y = 0; y < h; y += 3) { ctx.fillRect(0, y, w, 1); }
+      ctx.restore();
+    }
+
+    // ─── ALCHEMY ──────────────────────────────────────────────────────────────
+
+    function drawAlchemy(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["alchemy"]) {
+      ctx.fillStyle = "rgba(4, 0, 12, 0.15)";
+      ctx.fillRect(0, 0, w, h);
+
+      alchemyTRef.current += 0.008;
+      const t        = alchemyTRef.current;
+      const cx       = w / 2;
+      const cy       = h / 2;
+      const dim      = Math.min(w, h);
+      const bass     = b[0];
+      const high     = b[22];
+      const beat     = beatDetect(bass);
+      const primHue  = hexToHue(c.primary);
+      const secHue   = hexToHue(c.secondary);
+      const off      = (secHue - 276 + 360) % 360;
+
+      const blobs = [
+        { bx: 0.25 + Math.sin(t * 0.71) * 0.22, by: 0.38 + Math.cos(t * 0.53) * 0.20, br: 0.60, hue: (278 + off) % 360, bi: 0 },
+        { bx: 0.75 + Math.sin(t * 0.43) * 0.18, by: 0.62 + Math.cos(t * 0.61) * 0.22, br: 0.54, hue: (4   + off) % 360, bi: 6 },
+        { bx: 0.50 + Math.sin(t * 0.89) * 0.14, by: 0.22 + Math.cos(t * 0.73) * 0.16, br: 0.48, hue: (105 + off) % 360, bi: 12 },
+        { bx: 0.15 + Math.sin(t * 0.62) * 0.11, by: 0.78 + Math.cos(t * 0.82) * 0.14, br: 0.42, hue: (32  + off) % 360, bi: 18 },
+        { bx: 0.84 + Math.sin(t * 0.55) * 0.10, by: 0.32 + Math.cos(t * 0.44) * 0.19, br: 0.38, hue: (195 + off) % 360, bi: 24 },
+        { bx: 0.35 + Math.sin(t * 0.33) * 0.15, by: 0.70 + Math.cos(t * 0.58) * 0.12, br: 0.34, hue: (330 + off) % 360, bi: 4 },
+        { bx: 0.68 + Math.sin(t * 0.77) * 0.12, by: 0.18 + Math.cos(t * 0.39) * 0.14, br: 0.30, hue: (60  + off) % 360, bi: 20 },
+      ] as const;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < blobs.length; i++) {
+        const bl  = blobs[i];
+        const bxp = bl.bx * w;
+        const byp = bl.by * h;
+        const brp = bl.br * dim * (0.88 + b[bl.bi] * 0.52);
+        const g   = ctx.createRadialGradient(bxp, byp, 0, bxp, byp, brp);
+        const lum = 24 + b[bl.bi] * 22;
+        g.addColorStop(0,    `hsla(${bl.hue}, 100%, ${lum}%, 0.75)`);
+        g.addColorStop(0.45, `hsla(${bl.hue}, 80%, ${lum * 0.5}%, 0.20)`);
+        g.addColorStop(1,    "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      const ORBS = 8;
+      const orbR = dim * 0.38 * (1 + bass * 0.2);
+      for (let i = 0; i < ORBS; i++) {
+        const angle   = (i / ORBS) * Math.PI * 2 + t * 0.6;
+        const ox      = cx + Math.cos(angle) * orbR;
+        const oy      = cy + Math.sin(angle) * orbR;
+        const bandI   = Math.floor((i / ORBS) * BAR_COUNT);
+        const orbSize = 4 + b[bandI] * 10;
+        const orbHue  = (t * 60 + i * 45 + off) % 360;
+        const og      = ctx.createRadialGradient(ox, oy, 0, ox, oy, orbSize);
+        og.addColorStop(0, `hsla(${orbHue},100%,85%,0.9)`);
+        og.addColorStop(1, "transparent");
+        ctx.fillStyle = og;
+        ctx.beginPath();
+        ctx.arc(ox, oy, orbSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const POINTS = 7;
+      const outerR = dim * 0.30 * (1 + bass * 0.55);
+      const innerR = outerR * 0.34;
+      const rot    = t * 0.52;
+
+      for (let layer = 0; layer < 6; layer++) {
+        const scale    = 1 - layer * 0.12;
+        const layerRot = rot + layer * (Math.PI / (POINTS * 2));
+        const lum      = Math.floor(190 + high * 65);
+        ctx.save();
+        ctx.shadowBlur  = 32 - layer * 4;
+        ctx.shadowColor = `hsl(${primHue},100%,55%)`;
+        ctx.strokeStyle = `hsla(${primHue},90%,${lum * 0.35}%,${0.96 - layer * 0.14})`;
+        ctx.lineWidth   = Math.max(0.4, 3 - layer * 0.46);
+        ctx.beginPath();
+        for (let i = 0; i <= POINTS * 2; i++) {
+          const angle = (i / (POINTS * 2)) * Math.PI * 2 + layerRot;
+          const bIdx  = Math.floor((i / (POINTS * 2)) * BAR_COUNT);
+          const r     = i % 2 === 0
+            ? outerR * scale * (1 + b[bIdx % BAR_COUNT] * 0.34)
+            : innerR * scale;
+          const px = cx + r * Math.cos(angle);
+          const py = cy + r * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (beat) {
+        for (let i = 0; i < POINTS; i++) {
+          const angle = (i / POINTS) * Math.PI * 2 + rot;
+          const tx    = cx + Math.cos(angle) * outerR;
+          const ty    = cy + Math.sin(angle) * outerR;
+          for (let s = 0; s < 6; s++) {
+            const sa = angle + (s - 3) * 0.4;
+            ctx.save();
+            ctx.strokeStyle = `hsla(${primHue},100%,70%,0.7)`;
+            ctx.lineWidth   = 1.5;
+            ctx.shadowColor = `hsl(${primHue},100%,60%)`;
+            ctx.shadowBlur  = 8;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty);
+            ctx.lineTo(tx + Math.cos(sa) * 22, ty + Math.sin(sa) * 22);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, dim * 0.09 * (1 + bass * 1.4));
+      cg.addColorStop(0,   `hsla(${primHue},80%,90%,${0.5 + bass * 0.5})`);
+      cg.addColorStop(0.5, `hsla(${primHue},60%,50%,${0.25 + bass * 0.35})`);
+      cg.addColorStop(1,   "transparent");
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, dim * 0.09 * (1 + bass * 1.4), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ─── PLASMA ───────────────────────────────────────────────────────────────
+
+    function buildLightning(x1: number, y1: number, x2: number, y2: number, rough: number, depth: number, pts: [number, number][]) {
+      if (depth === 0) { pts.push([x2, y2]); return; }
+      const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * rough;
+      const my = (y1 + y2) / 2 + (Math.random() - 0.5) * rough;
+      buildLightning(x1, y1, mx, my, rough * 0.58, depth - 1, pts);
+      buildLightning(mx, my, x2, y2, rough * 0.58, depth - 1, pts);
+    }
+
+    function regenerateLightning(w: number, h: number, b: number[], primHue: number) {
+      const cx   = w / 2;
+      const cy   = h / 2;
+      const dim  = Math.min(w, h);
+      const bass = b[0];
+      const bolts = 4 + Math.floor(bass * 6);
+      lightningRef.current = [];
+      for (let i = 0; i < bolts; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist  = dim * (0.26 + Math.random() * 0.46);
+        const ex    = cx + Math.cos(angle) * dist;
+        const ey    = cy + Math.sin(angle) * dist;
+        const rough = 28 + bass * 80 + dim * 0.09;
+        const pts: [number, number][] = [[cx, cy]];
+        buildLightning(cx, cy, ex, ey, rough, 5, pts);
+        lightningRef.current.push({
+          points: pts,
+          hue:    (primHue + Math.random() * 40 - 20 + 360) % 360,
+          width:  1 + b[i % BAR_COUNT] * 3.5,
+          alpha:  0.7 + Math.random() * 0.3,
+        });
+
+        if (Math.random() > 0.4) {
+          const midIdx = Math.floor(pts.length / 2);
+          const bAngle = angle + (Math.random() - 0.5) * 1.2;
+          const bDist  = dist * (0.3 + Math.random() * 0.4);
+          const bex    = pts[midIdx][0] + Math.cos(bAngle) * bDist;
+          const bey    = pts[midIdx][1] + Math.sin(bAngle) * bDist;
+          const bpts: [number, number][] = [pts[midIdx]];
+          buildLightning(pts[midIdx][0], pts[midIdx][1], bex, bey, rough * 0.5, 4, bpts);
+          lightningRef.current.push({
+            points: bpts,
+            hue:    (primHue + 20 + Math.random() * 30) % 360,
+            width:  b[i % BAR_COUNT] * 2,
+            alpha:  0.45 + Math.random() * 0.3,
+          });
+        }
+      }
+    }
+
+    function drawPlasma(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["plasma"]) {
+      ctx.fillStyle = "rgba(0, 4, 20, 0.13)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const now     = Date.now() * 0.00028;
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const clouds = [
+        { x: 0.28 + Math.sin(now * 0.72) * 0.13, y: 0.50 + Math.cos(now * 0.51) * 0.17, band: b[4]  },
+        { x: 0.72 + Math.sin(now * 0.43) * 0.12, y: 0.42 + Math.cos(now * 0.63) * 0.17, band: b[12] },
+        { x: 0.50 + Math.sin(now * 0.91) * 0.14, y: 0.64 + Math.cos(now * 0.78) * 0.14, band: b[20] },
+        { x: 0.18 + Math.sin(now * 0.64) * 0.10, y: 0.30 + Math.cos(now * 0.55) * 0.12, band: b[8]  },
+      ];
+      for (const cl of clouds) {
+        const bx = cl.x * w; const by = cl.y * h;
+        const br = dim * (0.30 + bass * 0.20 + cl.band * 0.16);
+        const g  = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+        g.addColorStop(0,   `hsla(${secHue},70%,55%,0.20)`);
+        g.addColorStop(0.4, `hsla(${secHue},60%,35%,0.08)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      const ringR = 40 + bass * 80;
+      ctx.save();
+      ctx.strokeStyle = `hsla(${primHue},100%,70%,${0.15 + bass * 0.45})`;
+      ctx.lineWidth   = 1.5 + bass * 3;
+      ctx.shadowColor = `hsl(${primHue},100%,65%)`;
+      ctx.shadowBlur  = 15 + bass * 25;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      const interval = 280 + (1 - bass) * 400;
+      if (Date.now() - lightningTRef.current > interval) {
+        regenerateLightning(w, h, b, primHue);
+        lightningTRef.current = Date.now();
+      }
+
+      for (const bolt of lightningRef.current) {
+        if (bolt.points.length < 2) continue;
+        ctx.save();
+        ctx.shadowColor = `hsl(${bolt.hue},100%,70%)`;
+        ctx.shadowBlur  = 28;
+        ctx.strokeStyle = `hsla(${bolt.hue},100%,68%,${bolt.alpha * 0.35})`;
+        ctx.lineWidth   = (bolt.width + 5) * 1.8;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(bolt.points[0][0], bolt.points[0][1]);
+        for (let i = 1; i < bolt.points.length; i++) ctx.lineTo(bolt.points[i][0], bolt.points[i][1]);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(220,248,255,${bolt.alpha})`;
+        ctx.lineWidth   = bolt.width;
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(bolt.points[0][0], bolt.points[0][1]);
+        for (let i = 1; i < bolt.points.length; i++) ctx.lineTo(bolt.points[i][0], bolt.points[i][1]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30 + bass * 70);
+      cg.addColorStop(0,   `rgba(255,255,255,${0.32 + bass * 0.68})`);
+      cg.addColorStop(0.3, `hsla(${primHue},100%,70%,${0.20 + bass * 0.45})`);
+      cg.addColorStop(1,   "transparent");
+      ctx.fillStyle = cg;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // ─── VORTEX ───────────────────────────────────────────────────────────────
+
+    function drawVortex(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["vortex"]) {
+      ctx.fillStyle = "rgba(0,0,0,0.05)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const mid     = b[10];
+      const beat    = beatDetect(bass);
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+
+      vortexAngleRef.current += 0.010 + bass * 0.055;
+      const base   = vortexAngleRef.current;
+      const colorT = (Date.now() / 8000) % 1;
+
+      const RIBBONS = 20;
+
+      for (let r = 0; r < RIBBONS; r++) {
+        const bIdx      = Math.floor((r / RIBBONS) * BAR_COUNT);
+        const intensity = b[bIdx] * 0.55 + mid * 0.45;
+        const len       = dim * (0.12 + intensity * 0.52);
+        const spread    = dim * 0.08 * (1 + intensity);
+
+        for (let side = 0; side < 2; side++) {
+          const flip  = side === 0 ? 1 : -1;
+          const theta = (r / RIBBONS) * Math.PI * 2 + base + side * Math.PI;
+          const ex    = cx + Math.cos(theta) * len;
+          const ey    = cy + Math.sin(theta) * len;
+          const cp1x  = cx + Math.cos(theta - 0.80 * flip) * len * 0.45;
+          const cp1y  = cy + Math.sin(theta - 0.80 * flip) * len * 0.45;
+          const cp2x  = cx + Math.cos(theta + 0.40 * flip) * len * 0.80 - Math.sin(theta) * spread;
+          const cp2y  = cy + Math.sin(theta + 0.40 * flip) * len * 0.80 + Math.cos(theta) * spread;
+
+          const hue = (primHue + intensity * 30 + colorT * 40) % 360;
+          const lum = 20 + intensity * 38;
+
+          ctx.save();
+          ctx.strokeStyle = `hsl(${hue},100%,${lum}%)`;
+          ctx.lineWidth   = 1.5 + intensity * 32;
+          ctx.lineCap     = "round";
+          ctx.shadowColor = `hsl(${hue},100%,48%)`;
+          ctx.shadowBlur  = 8 + intensity * 18;
+          ctx.globalAlpha = 0.55 + intensity * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, ex, ey);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      if (beat) {
+        for (let i = 0; i < 14; i++) {
+          const angle  = Math.random() * Math.PI * 2;
+          const startR = 15;
+          const endR   = 25 + Math.random() * dim * 0.35;
+          ctx.save();
+          ctx.strokeStyle = `hsla(${secHue},100%,70%,0.6)`;
+          ctx.lineWidth   = 0.8 + Math.random() * 1.2;
+          ctx.shadowColor = `hsl(${secHue},100%,65%)`;
+          ctx.shadowBlur  = 6;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * startR, cy + Math.sin(angle) * startR);
+          ctx.lineTo(cx + Math.cos(angle) * endR,   cy + Math.sin(angle) * endR);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      const ng = ctx.createRadialGradient(cx, cy, 0, cx, cy, 20 + bass * 55);
+      ng.addColorStop(0,   `hsla(${secHue},100%,85%,${0.7 + bass * 0.3})`);
+      ng.addColorStop(0.4, `hsla(${primHue},100%,55%,${0.4 + bass * 0.3})`);
+      ng.addColorStop(1,   "transparent");
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillStyle = ng;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 20 + bass * 55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ─── RADIAL ───────────────────────────────────────────────────────────────
+
+    function drawRadial(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["radial"]) {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const baseHue = (Date.now() / 44 + primHue) % 360;
+      const beat    = beatDetect(bass);
+
+      const innerR   = dim * 0.09;
+      const maxOuter = dim * 0.42;
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2;
+        const len   = b[i] * maxOuter;
+        const hue   = (baseHue + i * (360 / BAR_COUNT)) % 360;
+        const col   = `hsl(${hue},100%,62%)`;
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = Math.max(1.5, (dim * 0.75 / BAR_COUNT) * 0.50);
+        ctx.lineCap     = "round";
+        ctx.shadowColor = col;
+        ctx.shadowBlur  = 16 + b[i] * 22;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * innerR,         cy + Math.sin(angle) * innerR);
+        ctx.lineTo(cx + Math.cos(angle) * (innerR + len), cy + Math.sin(angle) * (innerR + len));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const maxInner = dim * 0.14;
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2 + Math.PI / BAR_COUNT;
+        const len   = b[BAR_COUNT - 1 - i] * maxInner;
+        const hue   = (baseHue + 180 + i * (360 / BAR_COUNT)) % 360;
+        const col   = `hsl(${hue},100%,75%)`;
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.lineWidth   = Math.max(1, (dim * 0.50 / BAR_COUNT) * 0.40);
+        ctx.lineCap     = "round";
+        ctx.shadowColor = col;
+        ctx.shadowBlur  = 8;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * innerR * 0.4,          cy + Math.sin(angle) * innerR * 0.4);
+        ctx.lineTo(cx + Math.cos(angle) * (innerR * 0.4 + len),  cy + Math.sin(angle) * (innerR * 0.4 + len));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      const ringAngle = (Date.now() * 0.0008) % (Math.PI * 2);
+      const ringRad   = innerR * 1.5;
+      ctx.save();
+      ctx.strokeStyle = `hsla(${secHue},100%,60%,0.35)`;
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 8]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringRad, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < 8; i++) {
+        const a  = ringAngle + (i / 8) * Math.PI * 2;
+        const dx = cx + Math.cos(a) * ringRad;
+        const dy = cy + Math.sin(a) * ringRad;
+        const dg = ctx.createRadialGradient(dx, dy, 0, dx, dy, 5);
+        dg.addColorStop(0, `hsla(${(secHue + i * 45) % 360},100%,80%,0.9)`);
+        dg.addColorStop(1, "transparent");
+        ctx.fillStyle = dg;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      if (beat) {
+        for (let i = 0; i < 20; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const len2  = innerR * 0.5 + Math.random() * dim * 0.30;
+          const hue2  = (baseHue + Math.random() * 60) % 360;
+          ctx.save();
+          ctx.strokeStyle = `hsla(${hue2},100%,75%,0.7)`;
+          ctx.lineWidth   = 1;
+          ctx.shadowColor = `hsl(${hue2},100%,70%)`;
+          ctx.shadowBlur  = 10;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(angle) * len2, cy + Math.sin(angle) * len2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerR * (1 + bass * 1.8));
+      gr.addColorStop(0,   `hsla(${baseHue},100%,92%,${0.85 + bass * 0.15})`);
+      gr.addColorStop(0.5, `hsla(${baseHue + 60},100%,70%,0.3)`);
+      gr.addColorStop(1,   "transparent");
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(cx, cy, innerR * (1 + bass * 1.8), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ─── SYNTHGRID ────────────────────────────────────────────────────────────
+
+    function drawSynthgrid(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["synthgrid"]) {
+      const bass     = b[0];
+      const primHue  = hexToHue(c.primary);
+      const secHue   = hexToHue(c.secondary);
+      beatDetect(bass);
+
+      const horizonY = h * 0.44;
+      const cx = w / 2;
+
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+      skyGrad.addColorStop(0, "#00000f");
+      skyGrad.addColorStop(1, "#110022");
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, w, horizonY);
+
+      const [sr, sg, sb] = hexToRgb(c.stars);
+      for (let s = 0; s < 70; s++) {
+        const sx      = (s * 137.5 + 23) % w;
+        const sy      = (s * 83.1  + 11) % horizonY;
+        const twinkle = 0.4 + 0.3 * Math.sin(Date.now() * 0.001 * (0.5 + (s % 5) * 0.2) + s);
+        ctx.globalAlpha = twinkle;
+        ctx.fillStyle   = `rgb(${sr},${sg},${sb})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 0.6 + (s % 3) * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      const sunCx = cx;
+      const sunCy = horizonY * 0.8;
+      const sunR  = Math.min(w, h) * 0.20 * (1 + bass * 0.10);
+      const halo  = ctx.createRadialGradient(sunCx, sunCy, 0, sunCx, sunCy, sunR * 3.5);
+      halo.addColorStop(0,   `rgba(255,90,40,${0.14 + bass * 0.18})`);
+      halo.addColorStop(0.5, `rgba(200,0,140,${0.06 + bass * 0.08})`);
+      halo.addColorStop(1,   "transparent");
+      ctx.fillStyle = halo;
+      ctx.fillRect(0, 0, w, horizonY);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sunCx, sunCy, sunR, 0, Math.PI * 2);
+      ctx.clip();
+      const sunHue  = hexToHue(c.sun);
+      const sunGrad = ctx.createLinearGradient(0, sunCy - sunR, 0, sunCy + sunR);
+      sunGrad.addColorStop(0,    `hsl(${sunHue},100%,78%)`);
+      sunGrad.addColorStop(0.25, `hsl(${(sunHue + 20) % 360},100%,52%)`);
+      sunGrad.addColorStop(0.55, `hsl(${(sunHue + 55) % 360},90%,35%)`);
+      sunGrad.addColorStop(1,    `hsl(${(sunHue + 110) % 360},80%,16%)`);
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(sunCx - sunR, sunCy - sunR, sunR * 2, sunR * 2);
+      for (let i = 0; i < 14; i++) {
+        const t  = i / 14;
+        const sy = sunCy - sunR + t * sunR * 2;
+        const sh = sunR * (0.038 + t * 0.042);
+        ctx.fillStyle = `rgba(0,0,0,${0.45 + t * 0.35})`;
+        ctx.fillRect(sunCx - sunR, sy, sunR * 2, sh);
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.shadowColor = `hsl(${primHue},100%,60%)`;
+      ctx.shadowBlur  = 18;
+      ctx.fillStyle   = `hsla(${primHue},100%,60%,${0.35 + bass * 0.45})`;
+      ctx.fillRect(0, horizonY - 1, w, 2);
+      ctx.restore();
+
+      const groundGrad = ctx.createLinearGradient(0, horizonY, 0, h);
+      groundGrad.addColorStop(0, "#060010");
+      groundGrad.addColorStop(1, "#020008");
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, horizonY, w, h - horizonY);
+
+      ctx.save();
+      const terrainPts = 100;
+      ctx.beginPath();
+      ctx.moveTo(0, horizonY);
+      for (let i = 0; i <= terrainPts; i++) {
+        const tx = (i / terrainPts) * w;
+        const fi = Math.floor((i / terrainPts) * (BAR_COUNT - 1));
+        const ty = horizonY - b[fi] * 88 - b[Math.max(0, fi - 1)] * 32;
+        ctx.lineTo(tx, ty);
+      }
+      ctx.lineTo(w, horizonY);
+      ctx.closePath();
+      const tGrad = ctx.createLinearGradient(0, horizonY - 100, 0, horizonY);
+      tGrad.addColorStop(0, `hsla(${primHue},100%,60%,0.55)`);
+      tGrad.addColorStop(1, `hsla(${primHue},70%,30%,0.15)`);
+      ctx.fillStyle   = tGrad;
+      ctx.fill();
+      ctx.strokeStyle = `hsla(${primHue},100%,70%,${0.5 + bass * 0.5})`;
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = `hsl(${primHue},100%,65%)`;
+      ctx.shadowBlur  = 10;
+      ctx.stroke();
+      ctx.restore();
+
+      synthgridPhaseRef.current = (synthgridPhaseRef.current + 0.005 + bass * 0.010) % 1;
+      const phase = synthgridPhaseRef.current;
+
+      for (let i = 0; i < 22; i++) {
+        const t = ((i + phase) / 22);
+        const p = Math.pow(t, 2.3);
+        const y = horizonY + (h - horizonY) * p;
+        if (y > h || y < horizonY) continue;
+        ctx.save();
+        ctx.strokeStyle = `hsla(${primHue},100%,60%,${0.10 + p * 0.65})`;
+        ctx.lineWidth   = 0.5 + p * 2.8;
+        ctx.shadowColor = `hsl(${primHue},100%,55%)`;
+        ctx.shadowBlur  = p * 10;
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(w, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      for (let j = -18; j <= 18; j++) {
+        if (j === 0) continue;
+        const t     = Math.abs(j) / 18;
+        const alpha = (1 - t * 0.65) * 0.60 + bass * 0.14;
+        const bx    = cx + (j / 18) * (w * 0.52);
+        ctx.save();
+        ctx.strokeStyle = `hsla(${secHue},80%,55%,${alpha})`;
+        ctx.lineWidth   = 0.5 + (1 - t) * 0.9;
+        ctx.shadowColor = `hsl(${secHue},100%,50%)`;
+        ctx.shadowBlur  = (1 - t) * 6;
+        ctx.beginPath();
+        ctx.moveTo(cx, horizonY);
+        ctx.lineTo(bx, h);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // ─── TUNNEL ───────────────────────────────────────────────────────────────
+
+    function drawTunnel(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["tunnel"]) {
+      ctx.fillStyle = "rgba(0, 0, 8, 0.14)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const now     = Date.now();
+
+      tunnelPhaseRef.current = (tunnelPhaseRef.current + 0.010 + bass * 0.012) % 1;
+      tunnelAngleRef.current += 0.004 + bass * 0.018;
+      const phase   = tunnelPhaseRef.current;
+      const baseRot = tunnelAngleRef.current;
+
+      const RINGS = 24;
+      const SIDES = 6;
+
+      for (let i = RINGS - 1; i >= 0; i--) {
+        const t      = ((i / RINGS) + phase) % 1;
+        const radius = t * dim * 0.70;
+        if (radius < 1) continue;
+
+        const freqIdx = Math.floor((1 - t) * (BAR_COUNT - 1));
+        const amp     = b[freqIdx];
+        const pulse   = 1 + amp * 0.28;
+        const r       = radius * pulse;
+
+        const hue   = (secHue + 360 * t * 1.8 + baseRot * 57 + now * 0.018) % 360;
+        const lit   = 35 + amp * 40;
+        const alpha = Math.min(1, 0.25 + t * 0.65 + amp * 0.18);
+        const lw    = 0.8 + t * 4 + amp * 2.5;
+
+        ctx.strokeStyle = `hsla(${hue},100%,${lit}%,${alpha})`;
+        ctx.lineWidth   = lw;
+        ctx.shadowColor = `hsl(${hue},100%,60%)`;
+        ctx.shadowBlur  = 8 + t * 20 + amp * 28;
+
+        const ringRot = baseRot + i * 0.06;
+        ctx.beginPath();
+        for (let s = 0; s <= SIDES; s++) {
+          const angle   = (s / SIDES) * Math.PI * 2 + ringRot;
+          const vFreq   = b[Math.floor((s / SIDES) * (BAR_COUNT - 1))];
+          const distort = 1 + vFreq * 0.18;
+          const vx = cx + Math.cos(angle) * r * distort;
+          const vy = cy + Math.sin(angle) * r * distort;
+          if (s === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        if (i % 4 === 0 && t > 0.05 && i < RINGS - 1) {
+          const nextT = (((i + 4) / RINGS) + phase) % 1;
+          const nextR = nextT * dim * 0.70;
+          if (nextR < 1) continue;
+          ctx.strokeStyle = `hsla(${hue},80%,50%,${alpha * 0.3})`;
+          ctx.lineWidth   = 0.5;
+          for (let s = 0; s < SIDES; s++) {
+            const a  = (s / SIDES) * Math.PI * 2 + ringRot;
+            const na = (s / SIDES) * Math.PI * 2 + (baseRot + (i + 4) * 0.06);
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(a) * r,      cy + Math.sin(a) * r);
+            ctx.lineTo(cx + Math.cos(na) * nextR, cy + Math.sin(na) * nextR);
+            ctx.stroke();
+          }
+        }
+      }
+
+      ctx.shadowBlur = 0;
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 25 + bass * 70);
+      cg.addColorStop(0,   `rgba(255,255,255,${0.6 + bass * 0.4})`);
+      cg.addColorStop(0.3, `hsla(${primHue},100%,60%,${0.35 + bass * 0.40})`);
+      cg.addColorStop(0.7, `hsla(${(primHue + 120) % 360},100%,50%,${0.15 + bass * 0.20})`);
+      cg.addColorStop(1,   "transparent");
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 25 + bass * 70, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ─── OCEAN ────────────────────────────────────────────────────────────────
+
+    function drawOcean(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["ocean"]) {
+      ctx.fillStyle = "rgba(0, 8, 28, 0.22)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx       = w / 2;
+      const bass     = b[0];
+      const mid      = b[10];
+      const horizonY = h * 0.38;
+      const nearHue  = hexToHue(c.primary);
+      const deepHue  = hexToHue(c.secondary);
+
+      const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
+      sky.addColorStop(0, "rgba(0,5,25,0)");
+      sky.addColorStop(1, "rgba(0,20,60,0)");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, horizonY);
+
+      const atmGlow = ctx.createLinearGradient(0, horizonY - 30, 0, horizonY + 30);
+      atmGlow.addColorStop(0,   "transparent");
+      atmGlow.addColorStop(0.5, `hsla(${nearHue},100%,55%,${0.06 + bass * 0.12})`);
+      atmGlow.addColorStop(1,   "transparent");
+      ctx.fillStyle = atmGlow;
+      ctx.fillRect(0, horizonY - 30, w, 60);
+
+      oceanPhaseRef.current = (oceanPhaseRef.current + 0.005 + bass * 0.006) % 1;
+      const phase = oceanPhaseRef.current;
+
+      for (let wi = 0; wi < 30; wi++) {
+        const t     = ((wi + phase) / 30);
+        const depth = Math.pow(t, 1.6);
+        const screenY = horizonY + (h * 1.08 - horizonY) * depth;
+        if (screenY < horizonY || screenY > h * 1.06) continue;
+
+        const halfW   = w * 0.3 + w * 0.72 * depth;
+        const freqIdx = Math.floor((1 - depth) * (BAR_COUNT - 1));
+        const amp     = b[freqIdx] * (20 + depth * 140);
+
+        const hue   = (deepHue + (nearHue - deepHue) * depth + 720) % 360;
+        const sat   = 70 + depth * 30;
+        const lit   = 12 + depth * 55;
+        const alpha = Math.min(1, 0.12 + depth * 0.78);
+        const lw    = 0.4 + depth * 3.5;
+
+        ctx.save();
+        ctx.strokeStyle = `hsla(${hue},${sat}%,${lit}%,${alpha})`;
+        ctx.lineWidth   = lw;
+        ctx.shadowColor = `hsl(${hue},100%,${lit + 20}%)`;
+        ctx.shadowBlur  = depth * 22 + bass * 12;
+
+        const tBase = phase * Math.PI * 10;
+        ctx.beginPath();
+        for (let xi = 0; xi <= 140; xi++) {
+          const xt       = xi / 140;
+          const sx       = cx - halfW + xt * halfW * 2;
+          const envelope = Math.sin(xt * Math.PI);
+          const wave =
+            Math.sin(xt * Math.PI * 5 + tBase + wi * 0.6)       * amp * 0.50 +
+            Math.sin(xt * Math.PI * 3 - tBase * 0.7 + wi * 0.4) * amp * 0.30 +
+            Math.sin(xt * Math.PI * 9 + tBase * 1.3)             * amp * 0.20;
+          const sy = screenY - wave * envelope;
+          if (xi === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+
+        if (depth > 0.55) {
+          ctx.globalAlpha = depth * 0.12;
+          ctx.beginPath();
+          for (let xi = 0; xi <= 140; xi++) {
+            const xt       = xi / 140;
+            const sx       = cx - halfW + xt * halfW * 2;
+            const envelope = Math.sin(xt * Math.PI);
+            const wave =
+              Math.sin(xt * Math.PI * 5 + tBase + wi * 0.6)       * amp * 0.50 +
+              Math.sin(xt * Math.PI * 3 - tBase * 0.7 + wi * 0.4) * amp * 0.30;
+            ctx.lineTo(sx, screenY - wave * envelope);
+          }
+          ctx.lineTo(cx + halfW, screenY + 30);
+          ctx.lineTo(cx - halfW, screenY + 30);
+          ctx.closePath();
+          const wfg = ctx.createLinearGradient(0, screenY - amp, 0, screenY + 30);
+          wfg.addColorStop(0, `hsla(${hue},80%,40%,0.7)`);
+          wfg.addColorStop(1, "transparent");
+          ctx.fillStyle = wfg;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      const shCount = Math.floor(bass * 12 + mid * 8);
+      for (let s = 0; s < shCount; s++) {
+        const sx = (Math.random() - 0.5) * w * 1.5 + cx;
+        const sy = h * 0.55 + Math.random() * h * 0.35;
+        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 4 + Math.random() * 6);
+        sg.addColorStop(0, "rgba(200,240,255,0.6)");
+        sg.addColorStop(1, "transparent");
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 4 + Math.random() * 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // ─── ALBUM AURA ───────────────────────────────────────────────────────────
+
+    function drawArtwork(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[]) {
+      const bass   = b[0];
+      const mid    = b[10];
+      const high   = b[22];
+      const beat   = beatDetect(bass);
+      const cols   = artworkColorsRef.current;
+      const [c0, c1, c2] = cols;
+      const cx     = w / 2;
+      const cy     = h / 2;
+      const dim    = Math.min(w, h);
+      const now    = Date.now();
+
+      // Base fill
+      ctx.fillStyle = "#010106";
+      ctx.fillRect(0, 0, w, h);
+
+      // Laser light show background in album palette colors
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const LASERS = 14;
+      for (let i = 0; i < LASERS; i++) {
+        const t     = i / LASERS;
+        const col   = cols[i % 3];
+        const sweep = Math.sin(now * 0.00022 * (1 + t * 0.5) + i * 2.17) * 0.95;
+        const angle = (t - 0.5) * Math.PI * 1.5 + sweep;
+        const ox    = cx + Math.sin(now * 0.00009 + i * 1.3) * w * 0.06;
+        const oy    = h * 0.91;
+        const len   = Math.max(w, h) * 2.2;
+        const ex    = ox + Math.sin(angle) * len;
+        const ey    = oy - Math.cos(angle) * len;
+        const alpha = 0.07 + bass * 0.16 + (beat ? 0.10 : 0);
+        const lw    = 0.8 + bass * 2.2 + (beat ? 1.2 : 0);
+        const midX  = ox + Math.sin(angle) * len * 0.45;
+        const midY  = oy - Math.cos(angle) * len * 0.45;
+        const grad  = ctx.createLinearGradient(ox, oy, midX, midY);
+        grad.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${Math.min(1, alpha * 3)})`);
+        grad.addColorStop(0.4, `rgba(${col[0]},${col[1]},${col[2]},${alpha})`);
+        grad.addColorStop(1,   `rgba(${col[0]},${col[1]},${col[2]},0)`);
+        ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.75)`;
+        ctx.shadowBlur  = 12 + bass * 22 + (beat ? 14 : 0);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth   = lw;
+        ctx.lineCap     = "round";
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+      }
+      // Haze at origin point
+      for (let k = 0; k < 3; k++) {
+        const col  = cols[k];
+        const hx   = cx + Math.sin(now * 0.0001 + k * 2.1) * w * 0.08;
+        const hg   = ctx.createRadialGradient(hx, h * 0.91, 0, hx, h * 0.91, 60 + bass * 80);
+        hg.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${0.25 + bass * 0.30})`);
+        hg.addColorStop(1,   `rgba(${col[0]},${col[1]},${col[2]},0)`);
+        ctx.fillStyle = hg;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      // Three reactive color blobs (screen blend) in the extracted palette
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const blobData = [
+        { x: cx + Math.sin(now * 0.00043) * w * 0.18,        y: cy + Math.cos(now * 0.00031) * h * 0.15,        pulse: bass,  col: c0 },
+        { x: cx + Math.sin(now * 0.00057 + 2.0) * w * 0.20,  y: cy + Math.cos(now * 0.00039 + 1.0) * h * 0.18,  pulse: mid,   col: c1 },
+        { x: cx + Math.sin(now * 0.00037 + 4.2) * w * 0.15,  y: cy + Math.cos(now * 0.00047 + 3.1) * h * 0.20,  pulse: high,  col: c2 },
+      ];
+      for (const bd of blobData) {
+        const br = dim * (0.42 + bd.pulse * 0.28);
+        const g  = ctx.createRadialGradient(bd.x, bd.y, 0, bd.x, bd.y, br);
+        g.addColorStop(0,   `rgba(${bd.col[0]},${bd.col[1]},${bd.col[2]},${0.22 + bd.pulse * 0.30})`);
+        g.addColorStop(0.5, `rgba(${bd.col[0]},${bd.col[1]},${bd.col[2]},0.04)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      // Radial bars radiating from just outside the artwork frame
+      const artSize = dim * (0.30 + bass * 0.035);
+      const innerR  = artSize / 2 + 12;
+      const maxBar  = dim * 0.22;
+
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const barLen = b[i] * maxBar;
+        if (barLen < 1) continue;
+        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2;
+        const t     = i / BAR_COUNT;
+        const col   = t < 0.33 ? c0 : t < 0.66 ? c1 : c2;
+        const alpha = 0.55 + b[i] * 0.45;
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+        ctx.lineWidth   = 1.5 + b[i] * 3.5;
+        ctx.lineCap     = "round";
+        ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.8)`;
+        ctx.shadowBlur  = 10 + b[i] * 20;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * innerR,            cy + Math.sin(angle) * innerR);
+        ctx.lineTo(cx + Math.cos(angle) * (innerR + barLen), cy + Math.sin(angle) * (innerR + barLen));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Beat burst: sparks from the tip of each bar
+      if (beat) {
+        for (let i = 0; i < 24; i++) {
+          const angle  = (i / 24) * Math.PI * 2;
+          const col    = i % 3 === 0 ? c0 : i % 3 === 1 ? c1 : c2;
+          const burstR = innerR + b[i % BAR_COUNT] * maxBar;
+          const endR   = burstR + 16 + Math.random() * 44;
+          ctx.save();
+          ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.75)`;
+          ctx.lineWidth   = 0.8 + Math.random();
+          ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.9)`;
+          ctx.shadowBlur  = 12;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * burstR,        cy + Math.sin(angle) * burstR);
+          ctx.lineTo(cx + Math.cos(angle + 0.08) * endR,   cy + Math.sin(angle + 0.08) * endR);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // Album art (centered, slightly pulsing with bass, rounded corners)
+      const img    = artworkImgRef.current;
+      const artX   = cx - artSize / 2;
+      const artY   = cy - artSize / 2;
+      const radius = artSize * 0.07;
+
+      if (img) {
+        // Halo glow behind art
+        const haloR = artSize / 2 + 12 + bass * 40;
+        const halo  = ctx.createRadialGradient(cx, cy, artSize / 2 - 10, cx, cy, haloR);
+        halo.addColorStop(0,   `rgba(${c0[0]},${c0[1]},${c0[2]},${0.50 + bass * 0.40})`);
+        halo.addColorStop(0.4, `rgba(${c0[0]},${c0[1]},${c0[2]},${0.10 + bass * 0.12})`);
+        halo.addColorStop(1,   "transparent");
+        ctx.fillStyle = halo;
+        ctx.fillRect(0, 0, w, h);
+
+        // Image clipped to rounded rect
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(artX, artY, artSize, artSize, radius);
+        ctx.clip();
+        ctx.drawImage(img, artX, artY, artSize, artSize);
+        ctx.restore();
+
+        // Glowing border
+        ctx.save();
+        ctx.strokeStyle = `rgba(${c0[0]},${c0[1]},${c0[2]},${0.30 + bass * 0.40})`;
+        ctx.lineWidth   = 1.5;
+        ctx.shadowColor = `rgba(${c0[0]},${c0[1]},${c0[2]},0.9)`;
+        ctx.shadowBlur  = 14 + bass * 22;
+        ctx.beginPath();
+        ctx.roundRect(artX, artY, artSize, artSize, radius);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        // Loading / no artwork — pulsing circle placeholder
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, artSize / 2);
+        g.addColorStop(0,   `rgba(${c0[0]},${c0[1]},${c0[2]},${0.20 + bass * 0.28})`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, artSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Edge vignette to focus on center
+      const vg = ctx.createRadialGradient(cx, cy, dim * 0.24, cx, cy, Math.max(w, h) * 0.72);
+      vg.addColorStop(0, "transparent");
+      vg.addColorStop(1, "rgba(0,0,0,0.62)");
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // ─── main loop ────────────────────────────────────────────────────────────
+
+    const draw = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { rafRef.current = requestAnimationFrame(draw); return; }
+
+      const [w, h]    = ensureSize(ctx);
+      const target    = bandDataRef.current;
+      const displayed = displayedRef.current;
+      const c         = colorsRef.current;
+
+      for (let i = 0; i < BAR_COUNT; i++) {
+        displayed[i] = target[i] > displayed[i]
+          ? displayed[i] * 0.65 + target[i] * 0.35
+          : displayed[i] * 0.80 + target[i] * 0.20;
+      }
+
+      switch (MODES[modeIndexRef.current]) {
+        case "bars":      drawBars(ctx, w, h, displayed, c.bars);           break;
+        case "alchemy":   drawAlchemy(ctx, w, h, displayed, c.alchemy);     break;
+        case "plasma":    drawPlasma(ctx, w, h, displayed, c.plasma);       break;
+        case "vortex":    drawVortex(ctx, w, h, displayed, c.vortex);       break;
+        case "radial":    drawRadial(ctx, w, h, displayed, c.radial);       break;
+        case "synthgrid": drawSynthgrid(ctx, w, h, displayed, c.synthgrid); break;
+        case "tunnel":    drawTunnel(ctx, w, h, displayed, c.tunnel);       break;
+        case "ocean":     drawOcean(ctx, w, h, displayed, c.ocean);         break;
+        case "artwork":   drawArtwork(ctx, w, h, displayed);                break;
+      }
+
+      drawLabel(ctx, w, h);
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+
+    return () => {
+      unlistenPromise.then((fn) => fn());
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ display: "block", width: "100%", height: "100%", cursor: "pointer", ...style }}
+      onClick={handleClick}
+      title="Click to cycle visualizer mode"
+    />
+  );
+}

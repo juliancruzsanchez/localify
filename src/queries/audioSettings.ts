@@ -37,12 +37,17 @@ export function useSetCrossfade() {
 
 // ─── Audio output devices ─────────────────────────────────────────────────────
 
-export function useAudioOutputDevices() {
+export function useAudioOutputDevices(refetchInterval?: number) {
   return useQuery<AudioDevice[]>({
     queryKey: ["audioDevices"],
     queryFn:  () => invoke<AudioDevice[]>("get_audio_output_devices"),
-    staleTime: 30_000, // refresh every 30 s (AirPlay devices may appear/disappear)
+    staleTime: 30_000,
+    refetchInterval,
   });
+}
+
+export function useAudioOutputDevicesLive() {
+  return useAudioOutputDevices(5_000);
 }
 
 export function useSelectedAudioDevice() {

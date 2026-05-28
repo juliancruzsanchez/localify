@@ -3,15 +3,22 @@ import { cn } from "@/lib/utils";
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
 
+// Gains in dB for bands at 60 Hz, 150 Hz, 400 Hz, 1 kHz, 2.4 kHz, 15 kHz.
+// WMP preset values are adapted from the original 10-band Windows Media Player presets.
 export const EQ_PRESETS: Record<string, number[]> = {
-  Flat:        [0, 0, 0, 0, 0, 0],
-  "Bass Boost":  [8, 5, 2, 0, 0, 0],
-  "Treble Boost":[0, 0, 0, 2, 5, 8],
-  Classical:   [0, 0, 0, 0, 4, 6],
-  Rock:        [5, 3, -1, -1, 3, 5],
-  "Hip Hop":   [6, 4, 0, -2, -2, 2],
-  Jazz:        [3, 2, 0, 2, 3, 4],
-  Electronic:  [5, 3, 0, 2, 3, 4],
+  Flat:           [ 0,   0,   0,   0,   0,   0],
+  Rock:           [ 5,   3,  -1,  -1,   3,   5],
+  Pop:            [ 2,   6,   3,  -2,  -2,  -2],
+  Classical:      [ 0,   0,   0,   0,  -5,  -7],
+  Jazz:           [ 0,   0,   4,   4,   1,   5],
+  Dance:          [ 8,   3,   0,  -5,  -6,   0],
+  Country:        [-1,   3,   1,  -1,   2,   5],
+  Techno:         [ 7,   0,  -5,   0,   8,   8],
+  Speech:         [-2,   1,   2,   3,   3,   2],
+  "Bass Boost":   [ 8,   5,   2,   0,   0,   0],
+  "Treble Boost": [ 0,   0,   0,   2,   5,   8],
+  "Hip Hop":      [ 6,   4,   0,  -2,  -2,   2],
+  Electronic:     [ 5,   3,   0,   2,   3,   4],
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────

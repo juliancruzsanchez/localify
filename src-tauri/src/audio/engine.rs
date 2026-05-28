@@ -31,44 +31,61 @@ pub enum PlayerCommand {
 // ─── Media control event shorthand ───────────────────────────────────────────
 
 pub type MediaControlTx = Option<Sender<MediaControlUpdate>>;
+pub type VisualizerTx = Option<Sender<Vec<f32>>>;
 
 // ─── PlayerHandle ─────────────────────────────────────────────────────────────
 
 pub struct PlayerHandle {
-    pub cmd_tx:           Sender<PlayerCommand>,
-    pub is_playing:       Arc<AtomicBool>,
-    pub volume:           Arc<AtomicU32>,
-    pub position_ms:      Arc<AtomicI64>,
-    pub duration_ms:      Arc<AtomicI64>,
-    pub current_track_id: Arc<Mutex<Option<String>>>,
+    pub cmd_tx:             Sender<PlayerCommand>,
+    pub is_playing:         Arc<AtomicBool>,
+    pub volume:             Arc<AtomicU32>,
+    pub position_ms:        Arc<AtomicI64>,
+    pub duration_ms:        Arc<AtomicI64>,
+    pub current_track_id:   Arc<Mutex<Option<String>>>,
     /// Shared with the decode thread — update in place.
-    pub eq_config:        Arc<Mutex<EqConfig>>,
+    pub eq_config:          Arc<Mutex<EqConfig>>,
     /// Name of the currently selected output device (None = default).
-    pub selected_device:  Arc<Mutex<Option<String>>>,
+    pub selected_device:    Arc<Mutex<Option<String>>>,
+    /// File path of the track currently loaded (Some even while paused).
+    pub current_file_path:  Arc<Mutex<Option<String>>>,
+    pub viz_app_handle:     Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
 impl PlayerHandle {
     pub fn new(media_update_tx: MediaControlTx) -> Arc<Self> {
         let (cmd_tx, cmd_rx) = unbounded::<PlayerCommand>();
 
-        let is_playing       = Arc::new(AtomicBool::new(false));
-        let volume           = Arc::new(AtomicU32::new(80));
-        let position_ms      = Arc::new(AtomicI64::new(0));
-        let duration_ms      = Arc::new(AtomicI64::new(0));
-        let current_track_id = Arc::new(Mutex::new(None::<String>));
-        let eq_config        = Arc::new(Mutex::new(EqConfig::default()));
-        let selected_device  = Arc::new(Mutex::new(None::<String>));
+        let is_playing        = Arc::new(AtomicBool::new(false));
+        let volume            = Arc::new(AtomicU32::new(80));
+        let position_ms       = Arc::new(AtomicI64::new(0));
+        let duration_ms       = Arc::new(AtomicI64::new(0));
+        let current_track_id  = Arc::new(Mutex::new(None::<String>));
+        let eq_config         = Arc::new(Mutex::new(EqConfig::default()));
+        let selected_device   = Arc::new(Mutex::new(None::<String>));
+        let current_file_path = Arc::new(Mutex::new(None::<String>));
+        let viz_app_handle    = Arc::new(Mutex::new(None::<tauri::AppHandle>));
 
         let handle = Arc::new(PlayerHandle {
             cmd_tx,
-            is_playing:       is_playing.clone(),
-            volume:           volume.clone(),
-            position_ms:      position_ms.clone(),
-            duration_ms:      duration_ms.clone(),
-            current_track_id: current_track_id.clone(),
-            eq_config:        eq_config.clone(),
-            selected_device:  selected_device.clone(),
+            is_playing:        is_playing.clone(),
+            volume:            volume.clone(),
+            position_ms:       position_ms.clone(),
+            duration_ms:       duration_ms.clone(),
+            current_track_id:  current_track_id.clone(),
+            eq_config:         eq_config.clone(),
+            selected_device:   selected_device.clone(),
+            current_file_path: current_file_path.clone(),
+            viz_app_handle:    viz_app_handle.clone(),
         });
+
+        {
+            let cmd_tx_w          = handle.cmd_tx.clone();
+            let selected_device_w = selected_device.clone();
+            let current_file_path_w = current_file_path.clone();
+            std::thread::spawn(move || {
+                reconnect_watcher(cmd_tx_w, selected_device_w, current_file_path_w);
+            });
+        }
 
         std::thread::spawn(move || {
             audio_loop(
@@ -77,7 +94,9 @@ impl PlayerHandle {
                 position_ms, duration_ms,
                 current_track_id, eq_config,
                 selected_device,
+                current_file_path,
                 media_update_tx,
+                viz_app_handle,
             );
         });
 
@@ -130,6 +149,7 @@ fn build_stream(
     volume:     Arc<AtomicU32>,
     is_paused:  Arc<AtomicBool>,
     is_playing: Arc<AtomicBool>,
+    viz_tx:     VisualizerTx,
 ) -> Option<cpal::Stream> {
     let config = cpal::StreamConfig {
         channels,
@@ -183,6 +203,10 @@ fn build_stream(
                         }
                     }
                 }
+
+                if let Some(ref tx) = viz_tx {
+                    let _ = tx.try_send(data.to_vec());
+                }
             },
             |e| eprintln!("[audio] cpal stream error: {e}"),
             None,
@@ -207,6 +231,7 @@ fn start_playback(
     eq_config: &Arc<Mutex<EqConfig>>,
     selected_device: &Arc<Mutex<Option<String>>>,
     volume: &Arc<AtomicU32>,
+    viz_app_handle: Option<tauri::AppHandle>,
 ) {
     if let Some(old) = active.take() { old.halt(); }
     is_playing.store(false, Ordering::Relaxed);
@@ -240,12 +265,21 @@ fn start_playback(
     let (samples_tx, samples_rx) = bounded::<Vec<f32>>(256);
     let is_paused = Arc::new(AtomicBool::new(false));
 
+    let viz_tx: VisualizerTx = viz_app_handle.map(|ah| {
+        let (vtx, vrx) = bounded::<Vec<f32>>(16);
+        std::thread::spawn(move || {
+            super::visualizer::run_visualizer_thread(vrx, sample_rate, ah);
+        });
+        vtx
+    });
+
     let stream = match build_stream(
         &device, sample_rate, channels,
         samples_rx,
         volume.clone(),
         is_paused.clone(),
         is_playing.clone(),
+        viz_tx,
     ) {
         Some(s) => s,
         None => {
@@ -281,6 +315,42 @@ fn start_playback(
     *active = Some(ActivePlayback { stream, stop, is_paused, seek_tx });
 }
 
+fn reconnect_watcher(
+    cmd_tx:            Sender<PlayerCommand>,
+    selected_device:   Arc<Mutex<Option<String>>>,
+    current_file_path: Arc<Mutex<Option<String>>>,
+) {
+    // True when the selected device was absent on the previous poll cycle.
+    let mut was_absent = false;
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        let device_name = selected_device.lock().unwrap().clone();
+        let Some(ref name) = device_name else {
+            was_absent = false;
+            continue;
+        };
+
+        let present = cpal::default_host()
+            .output_devices()
+            .map(|mut iter| iter.any(|d| d.name().ok().as_deref() == Some(name.as_str())))
+            .unwrap_or(false);
+
+        if !present {
+            was_absent = true;
+        } else if was_absent {
+            // Transition: absent → present. Resume only if a track is loaded.
+            was_absent = false;
+            if current_file_path.lock().unwrap().is_some() {
+                let _ = cmd_tx.send(PlayerCommand::SwitchDevice {
+                    device_name: Some(name.clone()),
+                });
+            }
+        }
+    }
+}
+
 fn send_media_update(tx: &MediaControlTx, update: MediaControlUpdate) {
     if let Some(ref sender) = tx {
         let _ = sender.send(update);
@@ -288,18 +358,19 @@ fn send_media_update(tx: &MediaControlTx, update: MediaControlUpdate) {
 }
 
 fn audio_loop(
-    cmd_rx:           Receiver<PlayerCommand>,
-    is_playing:       Arc<AtomicBool>,
-    volume:           Arc<AtomicU32>,
-    position_ms:      Arc<AtomicI64>,
-    duration_ms:      Arc<AtomicI64>,
-    current_track_id: Arc<Mutex<Option<String>>>,
-    eq_config:        Arc<Mutex<EqConfig>>,
-    selected_device:  Arc<Mutex<Option<String>>>,
-    media_update_tx:  MediaControlTx,
+    cmd_rx:            Receiver<PlayerCommand>,
+    is_playing:        Arc<AtomicBool>,
+    volume:            Arc<AtomicU32>,
+    position_ms:       Arc<AtomicI64>,
+    duration_ms:       Arc<AtomicI64>,
+    current_track_id:  Arc<Mutex<Option<String>>>,
+    eq_config:         Arc<Mutex<EqConfig>>,
+    selected_device:   Arc<Mutex<Option<String>>>,
+    current_file_path: Arc<Mutex<Option<String>>>,
+    media_update_tx:   MediaControlTx,
+    viz_app_handle:    Arc<Mutex<Option<tauri::AppHandle>>>,
 ) {
     let mut active: Option<ActivePlayback> = None;
-    let current_file_path: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     loop {
         match cmd_rx.recv() {
@@ -310,12 +381,14 @@ fn audio_loop(
                 *current_track_id.lock().unwrap() = Some(track_id.clone());
                 *current_file_path.lock().unwrap() = Some(file_path.clone());
 
+                let viz_ah = viz_app_handle.lock().unwrap().clone();
                 start_playback(
                     &file_path, start_ms,
                     &mut active,
                     &is_playing, &position_ms, &duration_ms,
                     &current_track_id, &current_file_path,
                     &eq_config, &selected_device, &volume,
+                    viz_ah,
                 );
 
                 let dur = duration_ms.load(Ordering::Relaxed) as u64;
@@ -374,6 +447,9 @@ fn audio_loop(
             // ── Device switch ─────────────────────────────────────────────────
             Ok(PlayerCommand::SwitchDevice { device_name }) => {
                 eprintln!("[audio] SwitchDevice → {:?}", device_name);
+                let was_paused = active.as_ref()
+                    .map(|a| a.is_paused.load(Ordering::Relaxed))
+                    .unwrap_or(false);
                 if let Some(old) = active.take() { old.halt(); }
                 is_playing.store(false, Ordering::Relaxed);
                 *selected_device.lock().unwrap() = device_name;
@@ -382,13 +458,21 @@ fn audio_loop(
                 let resume = current_file_path.lock().unwrap().clone();
                 if let Some(ref fp) = resume {
                     let pos = position_ms.load(Ordering::Relaxed);
+                    let viz_ah = viz_app_handle.lock().unwrap().clone();
                     start_playback(
                         fp, pos.max(0) as u64,
                         &mut active,
                         &is_playing, &position_ms, &duration_ms,
                         &current_track_id, &current_file_path,
                         &eq_config, &selected_device, &volume,
+                        viz_ah,
                     );
+                    if was_paused {
+                        if let Some(ref act) = active {
+                            act.is_paused.store(true, Ordering::Relaxed);
+                        }
+                        is_playing.store(false, Ordering::Relaxed);
+                    }
                 }
             }
 
