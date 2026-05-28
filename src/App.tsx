@@ -1,28 +1,53 @@
+import { useState } from "react";
 import { Outlet } from "react-router";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { NowPlayingBar } from "@/components/layout/NowPlayingBar";
 import { QueuePanel } from "@/components/queue/QueuePanel";
+import { DragOverlayContent } from "@/components/drag/DragOverlay";
 import { useUiStore } from "@/store/uiStore";
 import { usePlayerStore } from "@/store/playerStore";
 import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
+import { useAddTrackToPlaylist } from "@/queries/playlists";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/lib/constants";
-import type { PlayerState } from "@/types";
+import type { PlayerState, Track } from "@/types";
 
 const QUEUE_PANEL_WIDTH = 280;
 
 export default function App() {
   const { sidebarCollapsed, queueOpen } = useUiStore();
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
+  const [activeTrack, setActiveTrack] = useState<Track | null>(null);
+  const { mutate: addTrackToPlaylist } = useAddTrackToPlaylist();
 
   // Last.fm scrobbling (no-ops when not connected)
   useLastFmScrobbling();
   const lastPlayStartedAt = usePlayerStore((s) => s._lastPlayStartedAt);
 
   const sidebarW = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
+
+  const handleDragStart = (event: any) => {
+    if (event.active.data.current?.type === "track") {
+      setActiveTrack(event.active.data.current.track);
+    }
+  };
+
+  const handleDragEnd = (event: any) => {
+    setActiveTrack(null);
+    if (
+      event.active.data.current?.type === "track" &&
+      event.over?.data.current?.type === "playlist"
+    ) {
+      addTrackToPlaylist({
+        playlistId: event.over.data.current.playlistId,
+        trackId: event.active.data.current.track.id,
+      });
+    }
+  };
 
   // Listen for track-ended event from Rust to auto-advance queue
   useEffect(() => {
@@ -58,37 +83,42 @@ export default function App() {
   const queueCol = queueOpen ? `${QUEUE_PANEL_WIDTH}px` : "0px";
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: `${sidebarW}px 1fr ${queueCol}`,
-        gridTemplateRows: "var(--topbar-height) 1fr var(--player-height)",
-        gridTemplateAreas: '"sidebar topbar topbar" "sidebar main queue" "player player player"',
-        height: "100vh",
-        overflow: "hidden",
-        transition: "grid-template-columns 200ms ease",
-        columnGap: "8px",
-        rowGap: "8px",
-        padding: "8px",
-        background: "var(--color-sidebar-bg)",
-      }}
-    >
-      <Sidebar />
-      <TopBar />
-      <main
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div
         style={{
-          gridArea: "main",
-          background: "var(--color-base)",
+          display: "grid",
+          gridTemplateColumns: `${sidebarW}px 1fr ${queueCol}`,
+          gridTemplateRows: "var(--topbar-height) 1fr var(--player-height)",
+          gridTemplateAreas: '"sidebar topbar topbar" "sidebar main queue" "player player player"',
+          height: "100vh",
           overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          borderRadius: "0 0 12px 12px",
+          transition: "grid-template-columns 200ms ease",
+          columnGap: "8px",
+          rowGap: "8px",
+          padding: "8px",
+          background: "var(--color-sidebar-bg)",
         }}
       >
-        <Outlet />
-      </main>
-      {queueOpen && <QueuePanel />}
-      <NowPlayingBar />
-    </div>
+        <Sidebar />
+        <TopBar />
+        <main
+          style={{
+            gridArea: "main",
+            background: "var(--color-base)",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            borderRadius: "0 0 12px 12px",
+          }}
+        >
+          <Outlet />
+        </main>
+        {queueOpen && <QueuePanel />}
+        <NowPlayingBar />
+        <DragOverlay dropAnimation={null}>
+          {activeTrack ? <DragOverlayContent track={activeTrack} /> : null}
+        </DragOverlay>
+      </div>
+    </DndContext>
   );
 }

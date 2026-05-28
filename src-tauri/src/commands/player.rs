@@ -22,18 +22,38 @@ pub async fn play_track(
     track_id: String,
     start_ms: Option<u64>,
 ) -> Result<()> {
-    let file_path = {
+    let (file_path, title, artist, album, artwork_file) = {
         let conn = state.db.lock().unwrap();
         let track = get_track_by_id(&conn, &track_id)?;
         // Increment play count
         let _ = crate::db::tracks::increment_play_count(&conn, &track_id);
-        track.file_path
+
+        let artwork_file = track.artwork_hash.as_ref().map(|hash| {
+            state
+                .app_data_dir
+                .join("artwork")
+                .join(format!("{hash}.jpg"))
+                .to_string_lossy()
+                .to_string()
+        });
+
+        (
+            track.file_path,
+            track.title,
+            track.artist,
+            track.album_title.unwrap_or_default(),
+            artwork_file,
+        )
     };
 
     state.player.send(PlayerCommand::Play {
         file_path,
         track_id: track_id.clone(),
         start_ms: start_ms.unwrap_or(0),
+        title,
+        artist,
+        album,
+        artwork_file,
     });
 
     let start = start_ms.unwrap_or(0);

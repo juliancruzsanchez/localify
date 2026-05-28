@@ -1,4 +1,5 @@
 import { Home, Music, Disc3, Mic2, ListMusic, Heart, ChevronLeft, ChevronRight, Plus, ChevronDown } from "lucide-react";
+import { useDroppable } from "@dnd-kit/core";
 import { useUiStore } from "@/store/uiStore";
 import { usePlaylistsQuery } from "@/queries/playlists";
 import { useLikedTrackIds } from "@/queries/liked";
@@ -12,6 +13,48 @@ import { usePlayerStore } from "@/store/playerStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 import { toAssetUrl } from "@/lib/assetUrl";
+import type { Playlist } from "@/types";
+
+function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapsed: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `playlist-${playlist.id}`,
+    data: { type: "playlist", playlistId: playlist.id },
+  });
+
+  return (
+    <PlaylistContextMenu playlist={playlist}>
+      <NavLink
+        ref={setNodeRef}
+        to={`/playlists/${playlist.id}`}
+        title={collapsed ? playlist.name : undefined}
+        className={({ isActive }) =>
+          cn(
+            "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors truncate",
+            collapsed ? "justify-center" : "",
+            isActive
+              ? "bg-white/10 text-white"
+              : "text-[var(--color-text-muted)] hover:text-white hover:bg-white/5",
+            isOver && "ring-2 ring-[var(--color-accent)] bg-white/10",
+          )
+        }
+      >
+        <div className="w-8 h-8 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] flex items-center justify-center">
+          {playlist.cover_path ? (
+            <img
+              src={toAssetUrl(playlist.cover_path)}
+              className="w-full h-full object-cover"
+              alt=""
+              draggable={false}
+            />
+          ) : (
+            <ListMusic size={14} className="text-[var(--color-text-dim)]" />
+          )}
+        </div>
+        {!collapsed && <span className="truncate">{playlist.name}</span>}
+      </NavLink>
+    </PlaylistContextMenu>
+  );
+}
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, albumArtExpanded, setAlbumArtExpanded } = useUiStore();
@@ -125,34 +168,7 @@ export function Sidebar() {
         )}
         <nav className="space-y-1">
           {playlists.map((pl) => (
-            <PlaylistContextMenu key={pl.id} playlist={pl}>
-            <NavLink
-              to={`/playlists/${pl.id}`}
-              title={sidebarCollapsed ? pl.name : undefined}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors truncate",
-                  sidebarCollapsed ? "justify-center" : "",
-                  isActive ? "bg-white/10 text-white" : "text-[var(--color-text-muted)] hover:text-white hover:bg-white/5",
-                )
-              }
-            >
-              {/* Small playlist thumbnail */}
-              <div className="w-8 h-8 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] flex items-center justify-center">
-                {pl.cover_path ? (
-                  <img
-                    src={toAssetUrl(pl.cover_path)}
-                    className="w-full h-full object-cover"
-                    alt=""
-                    draggable={false}
-                  />
-                ) : (
-                  <ListMusic size={14} className="text-[var(--color-text-dim)]" />
-                )}
-              </div>
-              {!sidebarCollapsed && <span className="truncate">{pl.name}</span>}
-            </NavLink>
-            </PlaylistContextMenu>
+            <PlaylistNavLink key={pl.id} playlist={pl} collapsed={sidebarCollapsed} />
           ))}
         </nav>
       </div>

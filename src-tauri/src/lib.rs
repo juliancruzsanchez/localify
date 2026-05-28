@@ -7,6 +7,7 @@ mod commands;
 mod lastfm;
 mod cast;
 mod plugins;
+mod media_control;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -18,6 +19,7 @@ use commands::player::{
     play_track, pause, resume, seek, set_volume, stop_playback, get_player_state,
     get_audio_settings, set_eq_bands, set_crossfade,
 };
+use media_control::MediaControlHandle;
 use commands::tracks::{get_tracks, get_track, reveal_in_folder};
 use commands::albums::{get_albums, get_album, get_album_tracks};
 use commands::artists::{get_artists, get_artist, get_artist_albums};
@@ -58,7 +60,18 @@ pub fn run() {
             let conn = db::connection::open_db(&app_data_dir)
                 .expect("Failed to open database");
 
-            let player = PlayerHandle::new();
+            // Media control channel: audio engine → media control (NowPlaying updates)
+            let (media_update_tx, media_update_rx) = crossbeam_channel::unbounded();
+
+            let player = PlayerHandle::new(Some(media_update_tx));
+
+            // Set up macOS media control (no-op on other platforms)
+            let remote_cmd_tx = player.cmd_tx.clone();
+            let media_control = MediaControlHandle::new(
+                remote_cmd_tx,
+                media_update_rx,
+                app.handle().clone(),
+            );
 
             let plugin_registry = PluginRegistry::new();
             let plugins_dir = app_data_dir.join("plugins");
@@ -72,6 +85,7 @@ pub fn run() {
                 app_data_dir,
                 cast: CastState::new(),
                 plugins: plugin_registry,
+                media_control: Some(media_control),
             });
 
             Ok(())

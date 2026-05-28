@@ -45,7 +45,7 @@ export function AlbumContextMenu({ album, children }: AlbumContextMenuProps) {
   const { data: tracks = [] } = useAlbumTracksQuery(album.id);
   const { data: playlists = [] } = usePlaylistsQuery();
   const { mutate: addToPlaylist } = useAddTrackToPlaylist();
-  const likedIds = useLikedTrackIds();
+  const { data: likedIds = [] } = useLikedTrackIds();
   const { mutate: likeTrack } = useLikeTrack();
   const { mutate: unlikeTrack } = useUnlikeTrack();
 

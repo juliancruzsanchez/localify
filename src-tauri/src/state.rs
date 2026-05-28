@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use crate::audio::engine::PlayerHandle;
 use crate::cast::CastState;
+use crate::media_control::MediaControlHandle;
 use crate::plugins::registry::PluginRegistry;
 
 pub struct AppState {
@@ -10,4 +11,5 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     pub cast:         Arc<CastState>,
     pub plugins:      Arc<PluginRegistry>,
+    pub media_control: Option<MediaControlHandle>,
 }

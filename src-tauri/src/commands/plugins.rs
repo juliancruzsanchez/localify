@@ -196,6 +196,10 @@ pub async fn plugin_audio_source_play(
         file_path: stream.uri.clone(),
         track_id,
         start_ms: 0,
+        title: String::new(),
+        artist: String::new(),
+        album: String::new(),
+        artwork_file: None,
     });
 
     Ok(stream)

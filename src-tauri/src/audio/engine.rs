@@ -3,12 +3,21 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crate::audio::eq::EqConfig;
+use crate::media_control::MediaControlUpdate;
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum PlayerCommand {
-    Play         { file_path: String, track_id: String, start_ms: u64 },
+    Play {
+        file_path:    String,
+        track_id:     String,
+        start_ms:     u64,
+        title:        String,
+        artist:       String,
+        album:        String,
+        artwork_file: Option<String>,
+    },
     Pause,
     Resume,
     Seek         { position_ms: u64 },
@@ -18,6 +27,10 @@ pub enum PlayerCommand {
     SwitchDevice { device_name: Option<String> },
     Shutdown,
 }
+
+// ─── Media control event shorthand ───────────────────────────────────────────
+
+pub type MediaControlTx = Option<Sender<MediaControlUpdate>>;
 
 // ─── PlayerHandle ─────────────────────────────────────────────────────────────
 
@@ -35,7 +48,7 @@ pub struct PlayerHandle {
 }
 
 impl PlayerHandle {
-    pub fn new() -> Arc<Self> {
+    pub fn new(media_update_tx: MediaControlTx) -> Arc<Self> {
         let (cmd_tx, cmd_rx) = unbounded::<PlayerCommand>();
 
         let is_playing       = Arc::new(AtomicBool::new(false));
@@ -64,6 +77,7 @@ impl PlayerHandle {
                 position_ms, duration_ms,
                 current_track_id, eq_config,
                 selected_device,
+                media_update_tx,
             );
         });
 
@@ -181,6 +195,98 @@ fn build_stream(
 
 // ─── Audio loop ───────────────────────────────────────────────────────────────
 
+fn start_playback(
+    file_path: &str,
+    start_ms: u64,
+    active: &mut Option<ActivePlayback>,
+    is_playing: &Arc<AtomicBool>,
+    position_ms: &Arc<AtomicI64>,
+    duration_ms: &Arc<AtomicI64>,
+    current_track_id: &Arc<Mutex<Option<String>>>,
+    current_file_path: &Arc<Mutex<Option<String>>>,
+    eq_config: &Arc<Mutex<EqConfig>>,
+    selected_device: &Arc<Mutex<Option<String>>>,
+    volume: &Arc<AtomicU32>,
+) {
+    if let Some(old) = active.take() { old.halt(); }
+    is_playing.store(false, Ordering::Relaxed);
+    position_ms.store(0, Ordering::Relaxed);
+
+    let (sample_rate, channels, dur_ms) =
+        match super::player::probe_file(file_path) {
+            Ok(info) => {
+                eprintln!("[audio] probe OK: {}Hz {}ch", info.0, info.1);
+                info
+            }
+            Err(e) => {
+                eprintln!("[audio] probe failed: {e}");
+                return;
+            }
+        };
+
+    if let Some(dur) = dur_ms {
+        duration_ms.store(dur as i64, Ordering::Relaxed);
+    }
+
+    let dev_name = selected_device.lock().unwrap().clone();
+    let device = match open_device(dev_name.as_deref()) {
+        Some(d) => d,
+        None => {
+            eprintln!("[audio] no output device available");
+            return;
+        }
+    };
+
+    let (samples_tx, samples_rx) = bounded::<Vec<f32>>(256);
+    let is_paused = Arc::new(AtomicBool::new(false));
+
+    let stream = match build_stream(
+        &device, sample_rate, channels,
+        samples_rx,
+        volume.clone(),
+        is_paused.clone(),
+        is_playing.clone(),
+    ) {
+        Some(s) => s,
+        None => {
+            eprintln!("[audio] failed to open cpal stream");
+            return;
+        }
+    };
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let (seek_tx, seek_rx) = unbounded::<u64>();
+
+    {
+        let file_path   = file_path.to_string();
+        let stop        = stop.clone();
+        let is_paused_c = is_paused.clone();
+        let position_ms = position_ms.clone();
+        let duration_ms = duration_ms.clone();
+        let eq_config   = eq_config.clone();
+
+        std::thread::spawn(move || {
+            super::player::decode_thread(
+                file_path, start_ms,
+                samples_tx,
+                eq_config,
+                position_ms, duration_ms,
+                stop, is_paused_c,
+                seek_rx,
+            );
+        });
+    }
+
+    is_playing.store(true, Ordering::Relaxed);
+    *active = Some(ActivePlayback { stream, stop, is_paused, seek_tx });
+}
+
+fn send_media_update(tx: &MediaControlTx, update: MediaControlUpdate) {
+    if let Some(ref sender) = tx {
+        let _ = sender.send(update);
+    }
+}
+
 fn audio_loop(
     cmd_rx:           Receiver<PlayerCommand>,
     is_playing:       Arc<AtomicBool>,
@@ -190,94 +296,40 @@ fn audio_loop(
     current_track_id: Arc<Mutex<Option<String>>>,
     eq_config:        Arc<Mutex<EqConfig>>,
     selected_device:  Arc<Mutex<Option<String>>>,
+    media_update_tx:  MediaControlTx,
 ) {
     let mut active: Option<ActivePlayback> = None;
+    let current_file_path: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     loop {
         match cmd_rx.recv() {
 
             // ── Play ─────────────────────────────────────────────────────────
-            Ok(PlayerCommand::Play { file_path, track_id, start_ms }) => {
+            Ok(PlayerCommand::Play { file_path, track_id, start_ms, title, artist, album, artwork_file }) => {
                 eprintln!("[audio] Play: track_id={track_id} file={file_path}");
-
-                if let Some(old) = active.take() { old.halt(); }
-                is_playing.store(false, Ordering::Relaxed);
-                position_ms.store(0, Ordering::Relaxed);
-                duration_ms.store(0, Ordering::Relaxed);
                 *current_track_id.lock().unwrap() = Some(track_id.clone());
+                *current_file_path.lock().unwrap() = Some(file_path.clone());
 
-                // Probe file for stream config
-                let (sample_rate, channels, dur_ms) =
-                    match super::player::probe_file(&file_path) {
-                        Ok(info) => {
-                            eprintln!("[audio] probe OK: {}Hz {}ch", info.0, info.1);
-                            info
-                        }
-                        Err(e) => {
-                            eprintln!("[audio] probe failed: {e}");
-                            continue;
-                        }
-                    };
+                start_playback(
+                    &file_path, start_ms,
+                    &mut active,
+                    &is_playing, &position_ms, &duration_ms,
+                    &current_track_id, &current_file_path,
+                    &eq_config, &selected_device, &volume,
+                );
 
-                if let Some(dur) = dur_ms {
-                    duration_ms.store(dur as i64, Ordering::Relaxed);
-                }
-
-                // Open output device
-                let dev_name = selected_device.lock().unwrap().clone();
-                let device = match open_device(dev_name.as_deref()) {
-                    Some(d) => d,
-                    None => {
-                        eprintln!("[audio] no output device available");
-                        continue;
+                let dur = duration_ms.load(Ordering::Relaxed) as u64;
+                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
+                send_media_update(&media_update_tx, MediaControlUpdate::TrackChanged(
+                    crate::media_control::TrackMetadata {
+                        title,
+                        artist,
+                        album,
+                        duration_ms: dur,
+                        elapsed_ms: pos,
+                        artwork_file,
                     }
-                };
-
-                // Channel connecting decode thread → cpal callback
-                // 256 chunks provides ~3 s of buffer at 44.1 kHz stereo / ~1 k samples per chunk
-                let (samples_tx, samples_rx) = bounded::<Vec<f32>>(256);
-                let is_paused = Arc::new(AtomicBool::new(false));
-
-                let stream = match build_stream(
-                    &device, sample_rate, channels,
-                    samples_rx,
-                    volume.clone(),
-                    is_paused.clone(),
-                    is_playing.clone(),
-                ) {
-                    Some(s) => s,
-                    None => {
-                        eprintln!("[audio] failed to open cpal stream");
-                        continue;
-                    }
-                };
-
-                // Spawn decode thread
-                let stop = Arc::new(AtomicBool::new(false));
-                let (seek_tx, seek_rx) = unbounded::<u64>();
-
-                {
-                    let file_path    = file_path.clone();
-                    let stop         = stop.clone();
-                    let is_paused_c  = is_paused.clone();
-                    let position_ms  = position_ms.clone();
-                    let duration_ms  = duration_ms.clone();
-                    let eq_config    = eq_config.clone();
-
-                    std::thread::spawn(move || {
-                        super::player::decode_thread(
-                            file_path, start_ms,
-                            samples_tx,
-                            eq_config,
-                            position_ms, duration_ms,
-                            stop, is_paused_c,
-                            seek_rx,
-                        );
-                    });
-                }
-
-                is_playing.store(true, Ordering::Relaxed);
-                active = Some(ActivePlayback { stream, stop, is_paused, seek_tx });
+                ));
             }
 
             // ── Simple controls ───────────────────────────────────────────────
@@ -286,6 +338,8 @@ fn audio_loop(
                     act.is_paused.store(true, Ordering::Relaxed);
                 }
                 is_playing.store(false, Ordering::Relaxed);
+                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
+                send_media_update(&media_update_tx, MediaControlUpdate::Paused(pos));
             }
 
             Ok(PlayerCommand::Resume) => {
@@ -293,12 +347,15 @@ fn audio_loop(
                     act.is_paused.store(false, Ordering::Relaxed);
                 }
                 is_playing.store(true, Ordering::Relaxed);
+                let pos = position_ms.load(Ordering::Relaxed).max(0) as u64;
+                send_media_update(&media_update_tx, MediaControlUpdate::Resumed(pos));
             }
 
             Ok(PlayerCommand::Seek { position_ms: pos }) => {
                 if let Some(ref act) = active {
                     let _ = act.seek_tx.send(pos);
                 }
+                send_media_update(&media_update_tx, MediaControlUpdate::Seeked(pos));
             }
 
             Ok(PlayerCommand::SetVolume { volume: vol }) => {
@@ -310,6 +367,8 @@ fn audio_loop(
                 is_playing.store(false, Ordering::Relaxed);
                 position_ms.store(0, Ordering::Relaxed);
                 *current_track_id.lock().unwrap() = None;
+                *current_file_path.lock().unwrap() = None;
+                send_media_update(&media_update_tx, MediaControlUpdate::Stopped);
             }
 
             // ── Device switch ─────────────────────────────────────────────────
@@ -318,6 +377,19 @@ fn audio_loop(
                 if let Some(old) = active.take() { old.halt(); }
                 is_playing.store(false, Ordering::Relaxed);
                 *selected_device.lock().unwrap() = device_name;
+
+                // Restart playback on the new device if a track was active
+                let resume = current_file_path.lock().unwrap().clone();
+                if let Some(ref fp) = resume {
+                    let pos = position_ms.load(Ordering::Relaxed);
+                    start_playback(
+                        fp, pos.max(0) as u64,
+                        &mut active,
+                        &is_playing, &position_ms, &duration_ms,
+                        &current_track_id, &current_file_path,
+                        &eq_config, &selected_device, &volume,
+                    );
+                }
             }
 
             Ok(PlayerCommand::Shutdown) | Err(_) => {

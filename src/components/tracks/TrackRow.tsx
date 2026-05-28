@@ -1,4 +1,5 @@
 import { Play, Heart, Music } from "lucide-react";
+import { useDraggable } from "@dnd-kit/core";
 import { usePlayerStore } from "@/store/playerStore";
 import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
@@ -23,6 +24,12 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
   const { mutate: unlikeTrack } = useUnlikeTrack();
   const artworkPath = useArtworkUrl(track.artwork_hash);
 
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `track-${track.id}`,
+    data: { type: "track", track },
+    attributes: { tabIndex: -1 },
+  });
+
   const handlePlay = () => {
     if (isActive && isPlaying) {
       togglePlayPause();
@@ -34,11 +41,16 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
   return (
     <TrackContextMenu track={track} queue={queue} queueIndex={index}>
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      data-track-id={track.id}
       style={style}
       onDoubleClick={() => !(isActive && isPlaying) && playTrack(track, queue, index)}
       className={cn(
         "group flex items-center gap-3 px-4 py-2 rounded-md text-sm hover:bg-white/5 cursor-default transition-colors",
         isActive && "bg-white/10",
+        isDragging && "opacity-50",
       )}
     >
       {/* Track number / play indicator */}
