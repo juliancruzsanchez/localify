@@ -6,6 +6,7 @@ import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { TrackContextMenu } from "@/components/tracks/TrackContextMenu";
 import { formatTime } from "@/lib/formatTime";
 import { cn } from "@/lib/utils";
+import { toAssetUrl } from "@/lib/assetUrl";
 import type { Track } from "@/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ function LikedTrackRow({ track, index, queue, isActive }: LikedRowProps) {
         <div className="w-10 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)]">
           {artworkPath ? (
             <img
-              src={`asset://localhost/${encodeURIComponent(artworkPath)}`}
+              src={toAssetUrl(artworkPath)}
               alt={track.album_title ?? track.title}
               className="w-full h-full object-cover"
             />

@@ -1,10 +1,14 @@
+import { useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { Play, ListEnd, ListStart, ListPlus, ChevronRight, Disc3, User, Heart, HeartOff } from "lucide-react";
+import { Play, ListEnd, ListStart, ListPlus, ChevronRight, Disc3, User, Heart, HeartOff, Pencil, FolderOpen } from "lucide-react";
 import { useNavigate } from "react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { usePlayerStore } from "@/store/playerStore";
 import { usePlaylistsQuery, useAddTrackToPlaylist } from "@/queries/playlists";
 import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
+import { EditTagsDialog } from "./EditTagsDialog";
+import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 import type { Track } from "@/types";
 
 interface TrackContextMenuProps {
@@ -22,6 +26,9 @@ export function TrackContextMenu({ track, queue, queueIndex, children }: TrackCo
   const isLiked = useIsLiked(track.id);
   const { mutate: likeTrack } = useLikeTrack();
   const { mutate: unlikeTrack } = useUnlikeTrack();
+  const [editTagsOpen, setEditTagsOpen] = useState(false);
+  const pluginRegistry = usePluginRegistrySnapshot();
+  const pluginMenuItems = pluginRegistry.getTrackContextMenuItems();
 
   const handlePlay = () => {
     playTrack(track, queue, queueIndex);
@@ -44,6 +51,12 @@ export function TrackContextMenu({ track, queue, queueIndex, children }: TrackCo
   };
 
   return (
+    <>
+    <EditTagsDialog
+      track={track}
+      open={editTagsOpen}
+      onClose={() => setEditTagsOpen(false)}
+    />
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
 
@@ -156,9 +169,45 @@ export function TrackContextMenu({ track, queue, queueIndex, children }: TrackCo
               Go to artist
             </MenuItem>
           )}
+
+          <Separator />
+
+          {/* Edit tags */}
+          <MenuItem
+            icon={<Pencil size={15} />}
+            onSelect={() => setEditTagsOpen(true)}
+          >
+            Edit tags…
+          </MenuItem>
+
+          {/* Reveal in Finder / Explorer */}
+          <MenuItem
+            icon={<FolderOpen size={15} />}
+            onSelect={() => invoke("reveal_in_folder", { filePath: track.file_path })}
+          >
+            Reveal in Finder
+          </MenuItem>
+
+          {/* Plugin-contributed context menu items */}
+          {pluginMenuItems.length > 0 && (
+            <>
+              <Separator />
+              {pluginMenuItems.map((item) => (
+                <MenuItem
+                  key={item.id}
+                  icon={item.icon}
+                  onSelect={() => item.onSelect(track)}
+                  disabled={item.enabled === false}
+                >
+                  {item.label}
+                </MenuItem>
+              ))}
+            </>
+          )}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+    </>
   );
 }
 

@@ -8,3 +8,8 @@ pub mod search;
 pub mod artwork;
 pub mod home;
 pub mod liked;
+pub mod lastfm;
+pub mod tags;
+pub mod audio_devices;
+pub mod cast;
+pub mod plugins;

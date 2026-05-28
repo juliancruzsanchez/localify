@@ -185,7 +185,9 @@ pub async fn scan_library(
     })
 }
 
-fn process_file(
+/// Exposed so the ID3 tag editor can do a targeted single-file rescan after
+/// writing new tags, keeping all DB relationships (artist/album FKs) correct.
+pub fn process_file(
     file_path: &Path,
     path_str: &str,
     mtime_secs: i64,

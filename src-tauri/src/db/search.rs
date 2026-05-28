@@ -123,7 +123,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<SearchResults> {
 
     // Search playlists
     let mut stmt = conn.prepare(
-        "SELECT p.id, p.name, p.description,
+        "SELECT p.id, p.name, p.description, p.cover_path,
                 COUNT(pt.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
@@ -141,10 +141,11 @@ pub fn search(conn: &Connection, query: &str) -> Result<SearchResults> {
             id: row.get(0)?,
             name: row.get(1)?,
             description: row.get(2)?,
-            track_count: row.get(3)?,
-            duration_secs: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
+            cover_path: row.get(3)?,
+            track_count: row.get(4)?,
+            duration_secs: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
         })
     })?
     .collect::<std::result::Result<Vec<_>, _>>()

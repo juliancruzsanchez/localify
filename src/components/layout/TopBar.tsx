@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useSearchQuery } from "@/queries/search";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
+import { toAssetUrl } from "@/lib/assetUrl";
 import { usePlayerStore } from "@/store/playerStore";
 import type { Track, Album, Artist } from "@/types";
 
@@ -25,7 +26,7 @@ function ArtworkThumb({
     >
       {path ? (
         <img
-          src={`asset://localhost/${encodeURIComponent(path)}`}
+          src={toAssetUrl(path)}
           alt=""
           className="w-full h-full object-cover"
         />
@@ -257,6 +258,8 @@ export function TopBar() {
         alignItems: "center",
         padding: "0 24px",
         gap: "12px",
+        borderRadius: "12px 12px 0 0",
+        overflow: "hidden",
       }}
     >
       {/* Home button */}

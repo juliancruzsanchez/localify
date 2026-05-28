@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { useAlbumQuery, useAlbumTracksQuery } from "@/queries/albums";
 import { TrackList } from "@/components/tracks/TrackList";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
+import { toAssetUrl } from "@/lib/assetUrl";
 import { formatTime } from "@/lib/formatTime";
 import { usePlayerStore } from "@/store/playerStore";
 
@@ -20,15 +21,15 @@ export function AlbumDetailView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-end gap-6 p-8 pb-6" style={{ background: "linear-gradient(180deg, rgba(40,40,40,0.8) 0%, var(--color-base) 100%)" }}>
+      <div className="flex items-end gap-6 p-8 pb-6 flex-shrink-0" style={{ background: "linear-gradient(180deg, rgba(40,40,40,0.8) 0%, var(--color-base) 100%)" }}>
         <button onClick={() => navigate(-1)} className="absolute top-4 left-4 text-[var(--color-text-muted)] hover:text-white">
           <ChevronLeft size={24} />
         </button>
         <div className="w-40 h-40 flex-shrink-0 rounded-lg overflow-hidden bg-[var(--color-surface-elevated)] shadow-2xl">
           {artworkPath ? (
-            <img src={`asset://localhost/${encodeURIComponent(artworkPath)}`} alt={album.title} className="w-full h-full object-cover" />
+            <img src={toAssetUrl(artworkPath)} alt={album.title} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Music size={48} className="text-[var(--color-text-dim)]" />
@@ -45,7 +46,7 @@ export function AlbumDetailView() {
       </div>
 
       {/* Play button */}
-      <div className="px-8 mb-4">
+      <div className="px-8 mb-4 flex-shrink-0">
         <button
           onClick={() => tracks[0] && playTrack(tracks[0], tracks, 0)}
           className="w-14 h-14 rounded-full bg-[var(--color-accent)] flex items-center justify-center hover:scale-105 transition-transform shadow-lg"

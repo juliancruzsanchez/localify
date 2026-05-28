@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import type { AudioDevice } from "@/types";
 
 export interface AudioSettings {
   eq_enabled:   boolean;
@@ -31,5 +32,34 @@ export function useSetCrossfade() {
     mutationFn: (durationMs: number) =>
       invoke("set_crossfade", { durationMs }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["audioSettings"] }),
+  });
+}
+
+// ─── Audio output devices ─────────────────────────────────────────────────────
+
+export function useAudioOutputDevices() {
+  return useQuery<AudioDevice[]>({
+    queryKey: ["audioDevices"],
+    queryFn:  () => invoke<AudioDevice[]>("get_audio_output_devices"),
+    staleTime: 30_000, // refresh every 30 s (AirPlay devices may appear/disappear)
+  });
+}
+
+export function useSelectedAudioDevice() {
+  return useQuery<string | null>({
+    queryKey: ["selectedAudioDevice"],
+    queryFn:  () => invoke<string | null>("get_selected_audio_device"),
+    staleTime: Infinity,
+  });
+}
+
+export function useSetAudioOutputDevice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deviceName: string | null) =>
+      invoke("set_audio_output_device", { deviceName }),
+    onSuccess: (_data, deviceName) => {
+      qc.setQueryData(["selectedAudioDevice"], deviceName);
+    },
   });
 }

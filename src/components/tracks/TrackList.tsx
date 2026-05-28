@@ -20,18 +20,24 @@ export function TrackList({ tracks }: TrackListProps) {
   });
 
   return (
-    <div className="px-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] border-b border-[var(--color-border)] mb-2">
+    <div className="px-4 flex flex-col flex-1 min-h-0">
+      {/* Header row */}
+      <div className="flex items-center gap-3 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] border-b border-[var(--color-border)] mb-2 flex-shrink-0">
         <div className="w-6 text-right">#</div>
+        {/* artwork spacer */}
+        <div className="w-10 flex-shrink-0" />
         <div className="flex-1">Title</div>
         <div className="hidden md:block flex-1">Album</div>
         <div className="hidden lg:block w-12 text-center">Format</div>
+        <div className="w-8" />
         <div className="w-12 text-right">Duration</div>
       </div>
 
-      {/* Virtualized list */}
-      <div ref={parentRef} className="overflow-y-auto" style={{ height: "calc(100vh - 220px)" }}>
+      {/* Virtualized scroll container – takes all remaining space */}
+      <div
+        ref={parentRef}
+        className="overflow-y-auto flex-1 min-h-0"
+      >
         <div
           style={{
             height: `${virtualizer.getTotalSize()}px`,

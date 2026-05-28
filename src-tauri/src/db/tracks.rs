@@ -200,16 +200,17 @@ pub fn get_mtime(conn: &Connection, file_path: &str) -> Result<Option<i64>> {
 pub fn upsert_track(conn: &Connection, meta: &TrackMetadata) -> Result<()> {
     conn.execute(
         "INSERT INTO tracks (id, file_path, title, title_sort, artist, artist_sort, album_artist,
-                             album_id, track_number, disc_number, year, genre, duration_secs,
+                             artist_id, album_id, track_number, disc_number, year, genre, duration_secs,
                              sample_rate, bit_depth, channels, bitrate_kbps, format, artwork_hash,
                              file_size_bytes, mtime_secs)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
          ON CONFLICT(file_path) DO UPDATE SET
              title = excluded.title,
              title_sort = excluded.title_sort,
              artist = excluded.artist,
              artist_sort = excluded.artist_sort,
              album_artist = excluded.album_artist,
+             artist_id = excluded.artist_id,
              album_id = excluded.album_id,
              track_number = excluded.track_number,
              disc_number = excluded.disc_number,
@@ -234,6 +235,7 @@ pub fn upsert_track(conn: &Connection, meta: &TrackMetadata) -> Result<()> {
             meta.artist,
             meta.artist.to_lowercase(),
             meta.album_artist,
+            meta.artist_id,
             meta.album_id,
             meta.track_number,
             meta.disc_number,

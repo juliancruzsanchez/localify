@@ -1,6 +1,7 @@
 import { Music } from "lucide-react";
 import { useNavigate } from "react-router";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
+import { toAssetUrl } from "@/lib/assetUrl";
 import type { Album } from "@/types";
 
 interface AlbumCardProps {
@@ -19,7 +20,7 @@ export function AlbumCard({ album }: AlbumCardProps) {
       <div className="w-full aspect-square rounded-md overflow-hidden bg-[var(--color-surface-elevated)] mb-3">
         {artworkPath ? (
           <img
-            src={`asset://localhost/${encodeURIComponent(artworkPath)}`}
+            src={toAssetUrl(artworkPath)}
             alt={album.title}
             className="w-full h-full object-cover"
           />

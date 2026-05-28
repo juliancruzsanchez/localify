@@ -1,8 +1,10 @@
-import { Play, Heart } from "lucide-react";
+import { Play, Heart, Music } from "lucide-react";
 import { usePlayerStore } from "@/store/playerStore";
 import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
+import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { formatTime } from "@/lib/formatTime";
 import { cn } from "@/lib/utils";
+import { toAssetUrl } from "@/lib/assetUrl";
 import type { Track } from "@/types";
 import { TrackContextMenu } from "./TrackContextMenu";
 
@@ -19,6 +21,7 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
   const isLiked = useIsLiked(track.id);
   const { mutate: likeTrack } = useLikeTrack();
   const { mutate: unlikeTrack } = useUnlikeTrack();
+  const artworkPath = useArtworkUrl(track.artwork_hash);
 
   const handlePlay = () => {
     playTrack(track, queue, index);
@@ -50,6 +53,21 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
         >
           <Play size={14} fill="white" />
         </button>
+      </div>
+
+      {/* Album art thumbnail */}
+      <div className="w-10 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)]">
+        {artworkPath ? (
+          <img
+            src={toAssetUrl(artworkPath)}
+            alt={track.album_title ?? track.title}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Music size={14} className="text-[var(--color-text-dim)]" />
+          </div>
+        )}
       </div>
 
       {/* Title & artist */}

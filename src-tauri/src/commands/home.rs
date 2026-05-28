@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::state::AppState;
 
+/// A genre mix card shown on the Home screen.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenreMix {
+    pub genre:        String,
+    pub track_count:  i64,
+    pub artwork_hash: Option<String>,
+}
+
 /// A single recently-played item shown on the Home screen.
 /// `kind` is either `"album"` or `"playlist"` so the frontend
 /// knows which route to navigate to.
@@ -92,4 +100,44 @@ pub async fn get_recently_played(
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)
+}
+
+/// Returns genres that have at least 3 tracks, sorted by track count descending.
+/// Includes a representative artwork_hash for display.
+#[tauri::command]
+pub async fn get_genre_mixes(
+    state: State<'_, AppState>,
+) -> Result<Vec<GenreMix>> {
+    let conn = state.db.lock().unwrap();
+
+    let mut stmt = conn.prepare(
+        "SELECT
+             t.genre,
+             COUNT(*) AS track_count,
+             (SELECT t2.artwork_hash
+              FROM   tracks t2
+              WHERE  t2.genre = t.genre
+                AND  t2.artwork_hash IS NOT NULL
+                AND  t2.removed_at  IS NULL
+              LIMIT  1) AS artwork_hash
+         FROM   tracks t
+         WHERE  t.genre      IS NOT NULL
+           AND  t.removed_at IS NULL
+         GROUP  BY t.genre
+         HAVING track_count >= 3
+         ORDER  BY track_count DESC
+         LIMIT  20",
+    )?;
+
+    let mixes = stmt
+        .query_map([], |row| {
+            Ok(GenreMix {
+                genre:        row.get(0)?,
+                track_count:  row.get(1)?,
+                artwork_hash: row.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(mixes)
 }

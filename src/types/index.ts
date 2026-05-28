@@ -46,6 +46,7 @@ export interface Playlist {
   id: string;
   name: string;
   description: string | null;
+  cover_path: string | null;
   track_count: number;
   duration_secs: number;
   created_at: number;
@@ -98,3 +99,34 @@ export type AppError =
   | { kind: "InvalidArgument"; message: string };
 
 export type RepeatMode = "none" | "one" | "all";
+
+// ─── Last.fm ──────────────────────────────────────────────────────────────────
+
+export interface LastFmSession {
+  username:    string;
+  session_key: string;
+  api_key:     string;
+  /** Stored locally only — never sent to the UI beyond this session object. */
+  api_secret:  string;
+}
+
+// ─── ID3 Tags ─────────────────────────────────────────────────────────────────
+
+export interface TrackTags {
+  title:        string;
+  artist:       string;
+  album_artist: string | null;
+  album:        string | null;
+  year:         number | null;
+  track_number: number | null;
+  disc_number:  number | null;
+  genre:        string | null;
+  comment:      string | null;
+}
+
+// ─── Audio Devices ────────────────────────────────────────────────────────────
+
+export interface AudioDevice {
+  name:       string;
+  is_default: boolean;
+}

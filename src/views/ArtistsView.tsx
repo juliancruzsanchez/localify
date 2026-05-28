@@ -14,7 +14,7 @@ export function ArtistsView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto pb-4">
       <div className="px-8 py-6">
         <h1 className="text-3xl font-bold text-white">Artists</h1>
         <p className="text-[var(--color-text-muted)] text-sm mt-1">{artists.length} artists</p>

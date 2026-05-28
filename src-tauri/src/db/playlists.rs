@@ -9,6 +9,7 @@ pub struct Playlist {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    pub cover_path: Option<String>,
     pub track_count: i32,
     pub duration_secs: f64,
     pub created_at: i64,
@@ -26,7 +27,7 @@ pub struct PlaylistTrack {
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
     let mut stmt = conn.prepare(
-        "SELECT p.id, p.name, p.description,
+        "SELECT p.id, p.name, p.description, p.cover_path,
                 COUNT(pt.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
@@ -42,10 +43,11 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
             id: row.get(0)?,
             name: row.get(1)?,
             description: row.get(2)?,
-            track_count: row.get(3)?,
-            duration_secs: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
+            cover_path: row.get(3)?,
+            track_count: row.get(4)?,
+            duration_secs: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
         })
     })?
     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -55,7 +57,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 
 pub fn get_playlist_by_id(conn: &Connection, id: &str) -> Result<Playlist> {
     conn.query_row(
-        "SELECT p.id, p.name, p.description,
+        "SELECT p.id, p.name, p.description, p.cover_path,
                 COUNT(pt.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
@@ -70,10 +72,11 @@ pub fn get_playlist_by_id(conn: &Connection, id: &str) -> Result<Playlist> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 description: row.get(2)?,
-                track_count: row.get(3)?,
-                duration_secs: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                cover_path: row.get(3)?,
+                track_count: row.get(4)?,
+                duration_secs: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         },
     )
@@ -218,6 +221,19 @@ pub fn reorder_playlist_track(conn: &Connection, entry_id: &str, new_position: f
     }
 
     Ok(())
+}
+
+/// Persist the stored cover-image path (already processed & copied to app-data dir).
+/// Pass `None` to clear the custom cover.
+pub fn set_playlist_cover(conn: &Connection, id: &str, cover_path: Option<&str>) -> Result<Playlist> {
+    let rows = conn.execute(
+        "UPDATE playlists SET cover_path = ?1, updated_at = unixepoch() WHERE id = ?2",
+        params![cover_path, id],
+    )?;
+    if rows == 0 {
+        return Err(AppError::NotFound(format!("Playlist {id} not found")));
+    }
+    get_playlist_by_id(conn, id)
 }
 
 pub fn renormalize_playlist_positions(conn: &Connection, playlist_id: &str) -> Result<()> {

@@ -4,6 +4,9 @@ mod db;
 mod audio;
 mod scanner;
 mod commands;
+mod lastfm;
+mod cast;
+mod plugins;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -15,18 +18,31 @@ use commands::player::{
     play_track, pause, resume, seek, set_volume, stop_playback, get_player_state,
     get_audio_settings, set_eq_bands, set_crossfade,
 };
-use commands::tracks::{get_tracks, get_track};
+use commands::tracks::{get_tracks, get_track, reveal_in_folder};
 use commands::albums::{get_albums, get_album, get_album_tracks};
 use commands::artists::{get_artists, get_artist, get_artist_albums};
 use commands::playlists::{
     get_playlists, get_playlist, create_playlist_cmd, update_playlist_cmd,
     delete_playlist_cmd, get_playlist_tracks_cmd, add_track_to_playlist_cmd,
-    remove_track_from_playlist_cmd, reorder_playlist_track_cmd,
+    remove_track_from_playlist_cmd, reorder_playlist_track_cmd, set_playlist_cover_cmd,
 };
 use commands::search::search_library;
 use commands::artwork::get_artwork_path;
-use commands::home::get_recently_played;
+use commands::home::{get_recently_played, get_genre_mixes};
 use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres};
+use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
+use commands::tags::{get_track_tags, update_track_tags};
+use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device};
+use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_cast, get_cast_session};
+use commands::plugins::{
+    plugin_list, plugin_install, plugin_uninstall,
+    plugin_get_settings, plugin_save_settings,
+    plugin_dispatch,
+    plugin_audio_source_search, plugin_audio_source_browse_root,
+    plugin_audio_source_browse_collection, plugin_audio_source_play,
+};
+use cast::CastState;
+use plugins::registry::PluginRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,10 +60,18 @@ pub fn run() {
 
             let player = PlayerHandle::new();
 
+            let plugin_registry = PluginRegistry::new();
+            let plugins_dir = app_data_dir.join("plugins");
+            if let Err(e) = plugins::loader::load_plugins_from_dir(&plugins_dir, &plugin_registry) {
+                log::warn!("[plugins] Error during startup load: {e}");
+            }
+
             app.manage(AppState {
                 db: Arc::new(Mutex::new(conn)),
                 player,
                 app_data_dir,
+                cast: CastState::new(),
+                plugins: plugin_registry,
             });
 
             Ok(())
@@ -73,6 +97,7 @@ pub fn run() {
             // Tracks
             get_tracks,
             get_track,
+            reveal_in_folder,
             // Albums
             get_albums,
             get_album,
@@ -91,18 +116,48 @@ pub fn run() {
             add_track_to_playlist_cmd,
             remove_track_from_playlist_cmd,
             reorder_playlist_track_cmd,
+            set_playlist_cover_cmd,
             // Search
             search_library,
             // Artwork
             get_artwork_path,
             // Home
             get_recently_played,
+            get_genre_mixes,
             // Liked songs
             like_track,
             unlike_track,
             get_liked_track_ids,
             get_liked_tracks,
             get_liked_genres,
+            // Last.fm
+            lastfm_authenticate,
+            lastfm_now_playing,
+            lastfm_scrobble,
+            // ID3 editor
+            get_track_tags,
+            update_track_tags,
+            // Audio output devices
+            get_audio_output_devices,
+            set_audio_output_device,
+            get_selected_audio_device,
+            // Google Cast
+            discover_cast_devices,
+            get_cast_devices,
+            cast_track,
+            stop_cast,
+            get_cast_session,
+            // Plugins
+            plugin_list,
+            plugin_install,
+            plugin_uninstall,
+            plugin_get_settings,
+            plugin_save_settings,
+            plugin_dispatch,
+            plugin_audio_source_search,
+            plugin_audio_source_browse_root,
+            plugin_audio_source_browse_collection,
+            plugin_audio_source_play,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Localify");

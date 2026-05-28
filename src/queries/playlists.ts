@@ -35,6 +35,30 @@ export function useCreatePlaylist() {
   });
 }
 
+export function useUpdatePlaylist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name, description }: { id: string; name: string; description?: string | null }) =>
+      invoke<Playlist>("update_playlist_cmd", { id, name, description: description ?? null }),
+    onSuccess: (updated) => {
+      qc.setQueryData(queryKeys.playlist(updated.id), updated);
+      qc.invalidateQueries({ queryKey: queryKeys.playlists() });
+    },
+  });
+}
+
+export function useSetPlaylistCover() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sourcePath }: { id: string; sourcePath: string | null }) =>
+      invoke<Playlist>("set_playlist_cover_cmd", { id, sourcePath }),
+    onSuccess: (updated) => {
+      qc.setQueryData(queryKeys.playlist(updated.id), updated);
+      qc.invalidateQueries({ queryKey: queryKeys.playlists() });
+    },
+  });
+}
+
 export function useDeletePlaylist() {
   const qc = useQueryClient();
   return useMutation({

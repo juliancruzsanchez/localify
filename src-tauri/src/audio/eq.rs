@@ -1,11 +1,9 @@
-/// 6-band peaking biquad equalizer implemented as a rodio `Source` wrapper.
+/// 6-band peaking biquad equalizer — push-based sample processor.
 ///
 /// The filter chain is rebuilt from the shared `EqConfig` every ~4096 samples
 /// (non-blocking `try_lock`) so that knob changes take effect in real-time
 /// without restarting playback.
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use rodio::Source;
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -50,7 +48,7 @@ impl Coeffs {
 
     /// Peaking EQ biquad as described in the Audio EQ Cookbook (R. Bristow-Johnson).
     fn peaking(freq_hz: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
-        let a      = 10f64.powf(gain_db as f64 / 40.0); // linear amplitude
+        let a      = 10f64.powf(gain_db as f64 / 40.0);
         let w0     = 2.0 * std::f64::consts::PI * (freq_hz as f64 / sample_rate as f64);
         let alpha  = w0.sin() / (2.0 * q as f64);
         let cos_w0 = w0.cos();
@@ -96,31 +94,31 @@ impl DelayLine {
     }
 }
 
-// ─── EqSource ─────────────────────────────────────────────────────────────────
+// ─── EqProcessor ─────────────────────────────────────────────────────────────
 
-/// Wraps any `Source<Item = f32>` and applies a live-adjustable 6-band EQ.
-pub struct EqSource<S> {
-    inner:           S,
-    channels:        u16,
-    sample_rate:     u32,
-    shared:          Arc<Mutex<EqConfig>>,
-    enabled:         bool,
-    current_gains:   [f32; 6],
-    coeffs:          [Coeffs; 6],
+/// Push-based 6-band EQ processor for interleaved f32 sample streams.
+/// Feed one sample at a time via `process()`; channel index advances automatically.
+pub struct EqProcessor {
+    channels:      u16,
+    sample_rate:   u32,
+    shared:        Arc<Mutex<EqConfig>>,
+    enabled:       bool,
+    current_gains: [f32; 6],
+    coeffs:        [Coeffs; 6],
     /// delay lines indexed [band][channel]; supports up to 2 channels (stereo).
-    delays:          [[DelayLine; 2]; 6],
-    current_ch:      u16,
-    sample_count:    u64,
+    delays:        [[DelayLine; 2]; 6],
+    current_ch:    u16,
+    sample_count:  u64,
 }
 
-impl<S: Source<Item = f32>> EqSource<S> {
-    pub fn new(inner: S, shared: Arc<Mutex<EqConfig>>) -> Self {
-        let channels    = inner.channels();
-        let sample_rate = inner.sample_rate();
-        let config      = shared.lock().unwrap().clone();
-        let coeffs      = build_coeffs(&config, sample_rate);
-        EqSource {
-            inner, channels, sample_rate, shared,
+impl EqProcessor {
+    pub fn new(channels: u16, sample_rate: u32, shared: Arc<Mutex<EqConfig>>) -> Self {
+        let config = shared.lock().unwrap().clone();
+        let coeffs = build_coeffs(&config, sample_rate);
+        EqProcessor {
+            channels,
+            sample_rate,
+            shared,
             enabled:       config.enabled,
             current_gains: config.gains_db,
             coeffs,
@@ -129,13 +127,10 @@ impl<S: Source<Item = f32>> EqSource<S> {
             sample_count:  0,
         }
     }
-}
 
-impl<S: Source<Item = f32>> Iterator for EqSource<S> {
-    type Item = f32;
-
+    /// Process one interleaved sample, advancing the internal channel counter.
     #[inline]
-    fn next(&mut self) -> Option<f32> {
+    pub fn process(&mut self, sample: f32) -> f32 {
         // Periodically check for config changes (non-blocking).
         if self.sample_count % UPDATE_EVERY == 0 {
             if let Ok(cfg) = self.shared.try_lock() {
@@ -150,28 +145,17 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
         }
         self.sample_count += 1;
 
-        let raw = self.inner.next()?;
-
         if !self.enabled {
             self.current_ch = (self.current_ch + 1) % self.channels;
-            return Some(raw);
+            return sample;
         }
 
-        // clamp channel index to ≤1 for the stereo delay-line arrays.
         let ch = (self.current_ch as usize).min(1);
-        let mut out = raw as f64;
+        let mut out = sample as f64;
         for band in 0..6 {
             out = self.delays[band][ch].process(out, &self.coeffs[band]);
         }
-
         self.current_ch = (self.current_ch + 1) % self.channels;
-        Some(out.clamp(-1.0, 1.0) as f32)
+        out.clamp(-1.0, 1.0) as f32
     }
-}
-
-impl<S: Source<Item = f32>> Source for EqSource<S> {
-    fn current_frame_len(&self) -> Option<usize> { self.inner.current_frame_len() }
-    fn channels(&self)          -> u16            { self.channels }
-    fn sample_rate(&self)       -> u32            { self.sample_rate }
-    fn total_duration(&self)    -> Option<Duration> { self.inner.total_duration() }
 }

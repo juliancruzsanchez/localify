@@ -14,8 +14,8 @@ export function SongsView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="flex items-center justify-between px-8 py-6">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-8 py-6 flex-shrink-0">
         <h1 className="text-3xl font-bold text-white">Songs</h1>
         <span className="text-[var(--color-text-muted)] text-sm">{tracks.length} tracks</span>
       </div>

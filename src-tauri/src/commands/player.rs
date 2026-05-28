@@ -32,9 +32,14 @@ pub async fn play_track(
 
     state.player.send(PlayerCommand::Play {
         file_path,
-        track_id,
+        track_id: track_id.clone(),
         start_ms: start_ms.unwrap_or(0),
     });
+
+    let start = start_ms.unwrap_or(0);
+    for hook in state.plugins.player_hooks() {
+        let _ = hook.on_play(&track_id, start).await;
+    }
 
     Ok(())
 }
@@ -42,18 +47,36 @@ pub async fn play_track(
 #[tauri::command]
 pub async fn pause(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Pause);
+    let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
+    let pos = state.player.position_ms.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    for hook in state.plugins.player_hooks() {
+        let _ = hook.on_pause(&track_id, pos).await;
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn resume(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Resume);
+    let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
+    let pos = state.player.position_ms.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    for hook in state.plugins.player_hooks() {
+        let _ = hook.on_resume(&track_id, pos).await;
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn seek(state: State<'_, AppState>, position_ms: u64) -> Result<()> {
     state.player.send(PlayerCommand::Seek { position_ms });
+    // Update the atomic immediately so the polling loop picks up the new
+    // position without having to wait for the decode thread to process the
+    // seek (otherwise the frontend slider snaps back to the old value).
+    state.player.position_ms.store(position_ms as i64, Ordering::Relaxed);
+    let track_id = state.player.current_track_id.lock().unwrap().clone().unwrap_or_default();
+    for hook in state.plugins.player_hooks() {
+        let _ = hook.on_seek(&track_id, position_ms).await;
+    }
     Ok(())
 }
 
@@ -69,6 +92,9 @@ pub async fn set_volume(state: State<'_, AppState>, volume: u8) -> Result<()> {
 #[tauri::command]
 pub async fn stop_playback(state: State<'_, AppState>) -> Result<()> {
     state.player.send(PlayerCommand::Stop);
+    for hook in state.plugins.player_hooks() {
+        let _ = hook.on_stop().await;
+    }
     Ok(())
 }
 

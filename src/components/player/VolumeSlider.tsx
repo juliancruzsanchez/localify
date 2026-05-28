@@ -12,7 +12,7 @@ export function VolumeSlider() {
     <div className="flex items-center gap-2">
       <button
         onClick={() => setVolume(volumePct > 0 ? 0 : 80)}
-        className="text-[var(--color-text-muted)] hover:text-white transition-colors"
+        className="text-[var(--color-text-muted)] hover:text-white transition-colors flex-shrink-0"
         aria-label="Toggle mute"
       >
         {volumePct === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -24,10 +24,8 @@ export function VolumeSlider() {
         step={1}
         value={volumePct}
         onChange={handleChange}
-        className="w-24 h-1 accent-[var(--color-accent)] cursor-pointer"
-        style={{
-          background: `linear-gradient(to right, var(--color-accent) ${volumePct}%, rgba(255,255,255,0.2) ${volumePct}%)`,
-        }}
+        className="w-24"
+        style={{ "--range-pct": `${volumePct}%` } as React.CSSProperties}
         aria-label="Volume"
       />
     </div>

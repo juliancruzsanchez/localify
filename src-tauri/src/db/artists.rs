@@ -18,7 +18,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
                 COUNT(DISTINCT t.id) as track_count
          FROM artists ar
          LEFT JOIN albums al ON al.artist_id = ar.id
-         LEFT JOIN tracks t ON t.album_id = al.id AND t.removed_at IS NULL
+         LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
          GROUP BY ar.id
          ORDER BY ar.name_sort"
     )?;
@@ -44,7 +44,7 @@ pub fn get_artist_by_id(conn: &Connection, id: &str) -> Result<Artist> {
                 COUNT(DISTINCT t.id) as track_count
          FROM artists ar
          LEFT JOIN albums al ON al.artist_id = ar.id
-         LEFT JOIN tracks t ON t.album_id = al.id AND t.removed_at IS NULL
+         LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
          WHERE ar.id = ?1
          GROUP BY ar.id",
         params![id],

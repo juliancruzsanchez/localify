@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePlayerStore } from "@/store/playerStore";
 import { useUiStore } from "@/store/uiStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
+import { toAssetUrl } from "@/lib/assetUrl";
 import { QueueTrackItem } from "./QueueTrackItem";
 
 export function QueuePanel() {
@@ -52,7 +53,7 @@ export function QueuePanel() {
             <div className="w-14 h-14 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)] shadow-lg">
               {nowArtworkPath ? (
                 <img
-                  src={`asset://localhost/${encodeURIComponent(nowArtworkPath)}`}
+                  src={toAssetUrl(nowArtworkPath)}
                   alt={currentTrack.album_title ?? currentTrack.title}
                   className="w-full h-full object-cover"
                 />

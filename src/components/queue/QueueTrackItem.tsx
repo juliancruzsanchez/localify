@@ -1,5 +1,6 @@
 import { Music } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toAssetUrl } from "@/lib/assetUrl";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import type { Track } from "@/types";
 
@@ -26,7 +27,7 @@ export function QueueTrackItem({ track, isCurrent, onClick }: QueueTrackItemProp
       <div className="w-9 h-9 flex-shrink-0 rounded overflow-hidden bg-[var(--color-surface-elevated)]">
         {artworkPath ? (
           <img
-            src={`asset://localhost/${encodeURIComponent(artworkPath)}`}
+            src={toAssetUrl(artworkPath)}
             alt={track.album_title ?? track.title}
             className="w-full h-full object-cover"
           />

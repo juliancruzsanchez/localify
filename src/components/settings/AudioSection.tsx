@@ -1,13 +1,19 @@
-import { useState, useCallback } from "react";
-import { RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { RotateCcw, Radio, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAudioSettingsQuery, useSetEqBands, useSetCrossfade } from "@/queries/audioSettings";
+import {
+  useAudioSettingsQuery, useSetEqBands, useSetCrossfade,
+  useAudioOutputDevices, useSelectedAudioDevice, useSetAudioOutputDevice,
+} from "@/queries/audioSettings";
 import { EqualizerUI, PresetSelector, EQ_PRESETS } from "./EqualizerUI";
 
 export function AudioSection() {
   const { data: settings, isLoading } = useAudioSettingsQuery();
-  const setEqBands   = useSetEqBands();
-  const setCrossfade = useSetCrossfade();
+  const setEqBands      = useSetEqBands();
+  const setCrossfade    = useSetCrossfade();
+  const { data: devices = [] }          = useAudioOutputDevices();
+  const { data: selectedDevice }        = useSelectedAudioDevice();
+  const setOutputDevice                 = useSetAudioOutputDevice();
 
   // Local draft state — lets us drag freely without a round-trip on every pixel.
   const [localGains,   setLocalGains]   = useState<number[] | null>(null);
@@ -53,13 +59,51 @@ export function AudioSection() {
 
   const crossfadeEnabled = settings.crossfade_ms > 0;
 
+  const handleDeviceSelect = (name: string | null) => {
+    setOutputDevice.mutate(name);
+  };
+
   return (
     <section id="audio" className="space-y-10">
       <div>
         <h2 className="text-xl font-bold text-white mb-1">Audio</h2>
         <p className="text-sm text-[var(--color-text-muted)]">
-          Equalizer and playback settings.
+          Output device, equalizer, and playback settings.
         </p>
+      </div>
+
+      {/* ── Output device / Casting ──────────────────────────────────────── */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-white uppercase tracking-widest flex items-center gap-2">
+          <Radio size={14} />
+          Output Device
+        </h3>
+        <p className="text-xs text-[var(--color-text-muted)] -mt-1">
+          AirPlay receivers appear here once discovered by macOS.
+        </p>
+
+        <div className="space-y-1.5">
+          {/* Default option */}
+          <DeviceRow
+            name="System Default"
+            isSelected={!selectedDevice}
+            onSelect={() => handleDeviceSelect(null)}
+          />
+          {devices.map((d) => (
+            <DeviceRow
+              key={d.name}
+              name={d.name}
+              isDefault={d.is_default}
+              isSelected={selectedDevice === d.name}
+              onSelect={() => handleDeviceSelect(d.name)}
+            />
+          ))}
+          {devices.length === 0 && (
+            <p className="text-xs text-[var(--color-text-dim)] px-1">
+              No output devices found.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Crossfade ─────────────────────────────────────────────────────── */}
@@ -149,6 +193,48 @@ export function AudioSection() {
         </div>
       </div>
     </section>
+  );
+}
+
+// ─── Device row ───────────────────────────────────────────────────────────────
+
+function DeviceRow({
+  name,
+  isDefault = false,
+  isSelected,
+  onSelect,
+}: {
+  name:       string;
+  isDefault?: boolean;
+  isSelected: boolean;
+  onSelect:   () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-left transition-all",
+        "border",
+        isSelected
+          ? "border-[var(--color-accent)]/40 bg-[var(--color-accent)]/10"
+          : "border-[var(--color-border)] hover:bg-white/5",
+        "bg-[var(--color-surface-elevated)]",
+      )}
+    >
+      <CheckCircle2
+        size={15}
+        className={cn(
+          "flex-shrink-0 transition-opacity",
+          isSelected ? "text-[var(--color-accent)] opacity-100" : "opacity-0",
+        )}
+      />
+      <span className={cn("flex-1", isSelected ? "text-white font-medium" : "text-[var(--color-text-muted)]")}>
+        {name}
+      </span>
+      {isDefault && (
+        <span className="text-xs text-[var(--color-text-dim)]">default</span>
+      )}
+    </button>
   );
 }
 

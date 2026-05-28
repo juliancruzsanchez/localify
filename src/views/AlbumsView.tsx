@@ -14,7 +14,7 @@ export function AlbumsView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto pb-4">
       <div className="px-8 py-6">
         <h1 className="text-3xl font-bold text-white">Albums</h1>
         <p className="text-[var(--color-text-muted)] text-sm mt-1">{albums.length} albums</p>

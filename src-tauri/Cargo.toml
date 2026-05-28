@@ -29,7 +29,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 rusqlite_migration = "1.2"
 
 lofty = "0.21"
-rodio = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 symphonia = { version = "0.5", features = ["all"] }
 
 walkdir = "2"
@@ -40,3 +39,21 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 thiserror = "1"
 anyhow = "1"
+async-trait = "0.1"
+
+# Last.fm scrobbling
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+md-5 = "0.10"
+
+# Audio output device enumeration (already transitive via rodio, but make it explicit)
+cpal = "0.15"
+tokio-util = { version = "0.7", features = ["io"] }
+
+# Google Cast (Chromecast) support
+rust_cast = "0.12"
+mdns-sd = "0.11"
+axum = { version = "0.7", default-features = false, features = ["tokio", "http1", "http2"] }
+local-ip-address = "0.6"
+
+[dev-dependencies]
+tempfile = "3"

@@ -16,7 +16,7 @@ export function SeekBar() {
       <span className="text-xs text-[var(--color-text-muted)] w-10 text-right tabular-nums">
         {formatMs(positionMs)}
       </span>
-      <div className="flex-1 relative group">
+      <div className="flex-1">
         <input
           type="range"
           min={0}
@@ -24,10 +24,9 @@ export function SeekBar() {
           step={0.1}
           value={pct}
           onChange={handleChange}
-          className="w-full h-1 accent-[var(--color-accent)] cursor-pointer"
-          style={{
-            background: `linear-gradient(to right, var(--color-accent) ${pct}%, rgba(255,255,255,0.2) ${pct}%)`,
-          }}
+          className="w-full"
+          style={{ "--range-pct": `${pct}%` } as React.CSSProperties}
+          aria-label="Seek"
         />
       </div>
       <span className="text-xs text-[var(--color-text-muted)] w-10 tabular-nums">

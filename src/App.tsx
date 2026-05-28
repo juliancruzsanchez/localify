@@ -8,6 +8,7 @@ import { NowPlayingBar } from "@/components/layout/NowPlayingBar";
 import { QueuePanel } from "@/components/queue/QueuePanel";
 import { useUiStore } from "@/store/uiStore";
 import { usePlayerStore } from "@/store/playerStore";
+import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/lib/constants";
 import type { PlayerState } from "@/types";
 
@@ -16,6 +17,9 @@ const QUEUE_PANEL_WIDTH = 280;
 export default function App() {
   const { sidebarCollapsed, queueOpen } = useUiStore();
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
+
+  // Last.fm scrobbling (no-ops when not connected)
+  useLastFmScrobbling();
   const lastPlayStartedAt = usePlayerStore((s) => s._lastPlayStartedAt);
 
   const sidebarW = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
@@ -59,10 +63,14 @@ export default function App() {
         display: "grid",
         gridTemplateColumns: `${sidebarW}px 1fr ${queueCol}`,
         gridTemplateRows: "var(--topbar-height) 1fr var(--player-height)",
-        gridTemplateAreas: '"topbar topbar topbar" "sidebar main queue" "player player player"',
+        gridTemplateAreas: '"sidebar topbar topbar" "sidebar main queue" "player player player"',
         height: "100vh",
         overflow: "hidden",
         transition: "grid-template-columns 200ms ease",
+        columnGap: "8px",
+        rowGap: "8px",
+        padding: "8px",
+        background: "var(--color-sidebar-bg)",
       }}
     >
       <Sidebar />
@@ -74,6 +82,7 @@ export default function App() {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          borderRadius: "0 0 12px 12px",
         }}
       >
         <Outlet />

@@ -6,6 +6,8 @@ interface UiStore {
   setSidebarCollapsed: (collapsed: boolean) => void;
   queueOpen: boolean;
   toggleQueue: () => void;
+  albumArtExpanded: boolean;
+  setAlbumArtExpanded: (v: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -14,4 +16,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   queueOpen: false,
   toggleQueue: () => set((s) => ({ queueOpen: !s.queueOpen })),
+  albumArtExpanded: false,
+  setAlbumArtExpanded: (v) => set({ albumArtExpanded: v }),
 }));

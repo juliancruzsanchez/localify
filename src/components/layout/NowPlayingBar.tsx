@@ -6,27 +6,32 @@ import { PlayPauseButton } from "@/components/player/PlayPauseButton";
 import { SkipBackButton, SkipForwardButton } from "@/components/player/SkipButton";
 import { SeekBar } from "@/components/player/SeekBar";
 import { VolumeSlider } from "@/components/player/VolumeSlider";
+import { CastButton } from "@/components/player/CastButton";
 import { cn } from "@/lib/utils";
+import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 
 export function NowPlayingBar() {
   const { shuffleEnabled, repeatMode, toggleShuffle, cycleRepeat } = usePlayerStore();
   const { queueOpen, toggleQueue } = useUiStore();
+  const pluginRegistry = usePluginRegistrySnapshot();
+  const pluginActions = pluginRegistry.getNowPlayingActions();
 
   return (
     <footer
-      className="flex items-center justify-between px-4 border-t border-[var(--color-border)]"
+      className="flex items-center justify-between px-4"
       style={{
         gridArea: "player",
         height: "var(--player-height)",
         background: "var(--color-surface)",
+        borderRadius: "12px",
       }}
     >
       {/* Left: Track Info */}
       <TrackInfo />
 
       {/* Center: Controls */}
-      <div className="flex flex-col items-center gap-1 flex-1 max-w-sm mx-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col items-center justify-center gap-1 flex-1 max-w-sm mx-4 h-full">
+        <div className="flex items-center gap-4 playbar">
           <button
             onClick={toggleShuffle}
             className={cn(
@@ -54,9 +59,26 @@ export function NowPlayingBar() {
         <SeekBar />
       </div>
 
-      {/* Right: Volume + Queue toggle */}
+      {/* Right: Volume + Cast + Plugin actions + Queue toggle */}
       <div className="flex items-center justify-end gap-3 w-48">
         <VolumeSlider />
+        <CastButton />
+        {pluginActions.map((action) => (
+          <button
+            key={action.id}
+            onClick={action.onClick}
+            className={cn(
+              "transition-colors flex-shrink-0",
+              action.isActive
+                ? "text-[var(--color-accent)]"
+                : "text-[var(--color-text-muted)] hover:text-white",
+            )}
+            aria-label={action.label}
+            title={action.label}
+          >
+            {action.icon}
+          </button>
+        ))}
         <button
           onClick={toggleQueue}
           className={cn(
