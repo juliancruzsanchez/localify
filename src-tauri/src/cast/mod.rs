@@ -127,7 +127,11 @@ pub fn discover(timeout_ms: u64) -> Vec<CastDevice> {
         }
     }
 
-    let _ = mdns.shutdown();
+    // Drop the receiver first so the daemon has no active subscriptions,
+    // then let the ServiceDaemon drop naturally (avoids a race in mdns_sd 0.11
+    // where shutdown() can log "failed to send response of shutdown").
+    drop(receiver);
+    drop(mdns);
     devices.into_values().collect()
 }
 
