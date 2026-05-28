@@ -6,6 +6,7 @@ import { Colors } from '../constants/theme';
 import { loadServerUrl } from '../hooks/useServer';
 import { useDownloadStore } from '../store/downloadStore';
 import { usePlayerStore } from '../store/playerStore';
+import { useStatsStore } from '../store/statsStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,12 +23,14 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
   const setBaseUrl = usePlayerStore((s) => s.setBaseUrl);
   const loadDownloads = useDownloadStore((s) => s.loadDownloads);
+  const loadStats = useStatsStore((s) => s.loadStats);
 
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
 
     loadDownloads();
+    loadStats();
     loadServerUrl().then((url) => {
       setBaseUrl(url);
       const inTabs = segments[0] === '(tabs)';
@@ -73,6 +76,10 @@ export default function RootLayout() {
           <Stack.Screen
             name="now-playing"
             options={{ presentation: 'modal', headerShown: false }}
+          />
+          <Stack.Screen
+            name="stats"
+            options={{ headerShown: false, animation: 'slide_from_bottom' }}
           />
         </Stack>
       </NavigationGuard>

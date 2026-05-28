@@ -1,8 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NowPlayingBar } from '../../components/NowPlayingBar';
-import { Colors, FontSize } from '../../constants/theme';
+import { Colors, FontSize, Spacing } from '../../constants/theme';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function TabBar({ state, descriptors, navigation }: any) {
@@ -10,7 +11,7 @@ function TabBar({ state, descriptors, navigation }: any) {
     <View style={styles.tabBarWrapper}>
       <NowPlayingBar />
       <View style={styles.tabBar}>
-        {state.routes.map((route, index) => {
+        {state.routes.map((route: any, index: number) => {
           const descriptor = descriptors[route.key];
           const isFocused = state.index === index;
           const label =
@@ -20,11 +21,7 @@ function TabBar({ state, descriptors, navigation }: any) {
 
           const iconFn = descriptor.options.tabBarIcon;
           const icon = iconFn
-            ? iconFn({
-                focused: isFocused,
-                color: isFocused ? Colors.text : Colors.textDim,
-                size: 24,
-              })
+            ? iconFn({ focused: isFocused, color: isFocused ? Colors.text : Colors.textDim, size: 24 })
             : null;
 
           return (
@@ -45,10 +42,7 @@ function TabBar({ state, descriptors, navigation }: any) {
             >
               {icon}
               <Text
-                style={[
-                  styles.tabLabel,
-                  { color: isFocused ? Colors.text : Colors.textDim },
-                ]}
+                style={[styles.tabLabel, { color: isFocused ? Colors.text : Colors.textDim }]}
               >
                 {label === 'index' ? 'Home' : label}
               </Text>
@@ -57,12 +51,6 @@ function TabBar({ state, descriptors, navigation }: any) {
         })}
       </View>
     </View>
-  );
-}
-
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
-  return (
-    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
   );
 }
 
@@ -80,7 +68,9 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           headerShown: false,
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -88,7 +78,9 @@ export default function TabLayout() {
         options={{
           title: 'Search',
           headerShown: false,
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🔍" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -96,7 +88,9 @@ export default function TabLayout() {
         options={{
           title: 'Your Library',
           headerShown: false,
-          tabBarIcon: ({ focused }) => <TabIcon emoji="📚" focused={focused} />,
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'library' : 'library-outline'} size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

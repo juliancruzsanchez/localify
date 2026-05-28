@@ -3,12 +3,14 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
 import type { TrackSummary } from '../hooks/useLibrary';
+import { DownloadButton } from './DownloadButton';
 
 interface Props {
   track: TrackSummary;
   artworkUri: string | null;
   trackNumber?: number;
   isActive?: boolean;
+  showDownload?: boolean;
   onPress?: () => void;
   onMenuPress?: () => void;
 }
@@ -20,7 +22,7 @@ function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function TrackRow({ track, artworkUri, trackNumber, isActive, onPress, onMenuPress }: Props) {
+export function TrackRow({ track, artworkUri, trackNumber, isActive, showDownload, onPress, onMenuPress }: Props) {
   const titleColor = isActive ? Colors.accent : Colors.text;
 
   return (
@@ -54,6 +56,7 @@ export function TrackRow({ track, artworkUri, trackNumber, isActive, onPress, on
       {/* Right */}
       <View style={styles.right}>
         <Text style={styles.duration}>{formatDuration(track.duration_ms)}</Text>
+        {showDownload && <DownloadButton track={track} size={16} />}
         <TouchableOpacity onPress={onMenuPress} hitSlop={12} style={styles.menuBtn}>
           <Text style={styles.menuDots}>•••</Text>
         </TouchableOpacity>

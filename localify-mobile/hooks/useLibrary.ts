@@ -158,14 +158,54 @@ export function useSearch(q: string) {
   });
 }
 
+// ── Library snapshot ─────────────────────────────────────────────────────────
+
+export interface LibrarySnapshot {
+  tracks: TrackSummary[];
+  albums: AlbumSummary[];
+  artists: ArtistSummary[];
+  playlists: PlaylistSummary[];
+}
+
+export function useLibrarySnapshot() {
+  const { baseUrl } = useServer();
+  return useQuery<LibrarySnapshot>({
+    queryKey: ['library-snapshot', baseUrl],
+    queryFn: () => apiFetch<LibrarySnapshot>(`${baseUrl}/api/library.json`),
+    enabled: !!baseUrl,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
 // ── Artwork URL helper ────────────────────────────────────────────────────────
 
-export function artworkUrl(baseUrl: string | null, trackId: string): string | null {
+export function artworkUrl(baseUrl: string | null, id: string): string | null {
   if (!baseUrl) return null;
-  return `${baseUrl}/api/artwork/${trackId}`;
+  return `${baseUrl}/api/artwork/${id}`;
 }
 
 export function streamUrl(baseUrl: string | null, trackId: string): string | null {
   if (!baseUrl) return null;
   return `${baseUrl}/stream/${trackId}`;
+}
+
+// ── Server stats ──────────────────────────────────────────────────────────────
+
+export interface ServerStatsSummary {
+  total_plays: number;
+  total_listen_ms: number;
+  unique_tracks: number;
+  unique_artists: number;
+  top_tracks: Array<{ id: string; name: string; count: number; ms: number }>;
+  top_artists: Array<{ id: string; name: string; count: number; ms: number }>;
+}
+
+export function useServerStats() {
+  const { baseUrl } = useServer();
+  return useQuery<ServerStatsSummary>({
+    queryKey: ['server-stats', baseUrl],
+    queryFn: () => apiFetch<ServerStatsSummary>(`${baseUrl}/api/stats`),
+    enabled: !!baseUrl,
+    staleTime: 1000 * 60 * 2,
+  });
 }

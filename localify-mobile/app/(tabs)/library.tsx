@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -13,7 +14,7 @@ import {
 import { DownloadButton } from '../../components/DownloadButton';
 import { FilterPills, Pill } from '../../components/FilterPills';
 import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
-import { artworkUrl, useAlbums, useArtists, usePlaylists } from '../../hooks/useLibrary';
+import { artworkUrl, useLibrarySnapshot } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { useDownloadStore } from '../../store/downloadStore';
 import { usePlayerStore } from '../../store/playerStore';
@@ -24,10 +25,11 @@ const PILLS: Pill[] = [
   { id: 'playlists', label: 'Playlists' },
   { id: 'albums', label: 'Albums' },
   { id: 'artists', label: 'Artists' },
+  { id: 'songs', label: 'Songs' },
   { id: 'downloads', label: 'Downloads' },
 ];
 
-type FilterId = 'all' | 'playlists' | 'albums' | 'artists' | 'downloads';
+type FilterId = 'all' | 'playlists' | 'albums' | 'artists' | 'songs' | 'downloads';
 
 export default function LibraryScreen() {
   const router = useRouter();
@@ -37,17 +39,16 @@ export default function LibraryScreen() {
   const playTrack = usePlayerStore((s) => s.playTrack);
   const downloadedTracks = Object.values(downloads).map((d) => d.metadata);
 
-  const { data: playlists, isLoading: playlistsLoading } = usePlaylists();
-  const { data: albums, isLoading: albumsLoading } = useAlbums();
-  const { data: artists, isLoading: artistsLoading } = useArtists();
+  const { data: snapshot, isLoading } = useLibrarySnapshot();
 
-  const isLoading =
-    filter !== 'downloads' && (
-      (filter === 'all' && (playlistsLoading || albumsLoading)) ||
-      (filter === 'playlists' && playlistsLoading) ||
-      (filter === 'albums' && albumsLoading) ||
-      (filter === 'artists' && artistsLoading)
-    );
+  const playlists = snapshot?.playlists ?? [];
+  const albums    = snapshot?.albums    ?? [];
+  const artists   = snapshot?.artists   ?? [];
+  const songs     = snapshot?.tracks    ?? [];
+
+  const showLoading = isLoading && filter !== 'downloads';
+
+  // ── Renderers ────────────────────────────────────────────────────────────────
 
   function renderPlaylist({ item }: { item: PlaylistSummary }) {
     const artwork = item.id !== 'liked' ? artworkUrl(baseUrl, item.id) : null;
@@ -58,10 +59,7 @@ export default function LibraryScreen() {
         activeOpacity={0.7}
       >
         {item.id === 'liked' ? (
-          <LinearGradient
-            colors={['#4a148c', '#7b1fa2']}
-            style={styles.rowArtwork}
-          >
+          <LinearGradient colors={['#4a148c', '#7b1fa2']} style={styles.rowArtwork}>
             <Text style={styles.likedIcon}>♥</Text>
           </LinearGradient>
         ) : (
@@ -73,9 +71,7 @@ export default function LibraryScreen() {
           />
         )}
         <View style={styles.rowInfo}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.name}
-          </Text>
+          <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
           <Text style={styles.rowMeta}>Playlist · {item.track_count} songs</Text>
         </View>
       </TouchableOpacity>
@@ -83,7 +79,6 @@ export default function LibraryScreen() {
   }
 
   function renderAlbum({ item }: { item: AlbumSummary }) {
-    const artwork = artworkUrl(baseUrl, item.id);
     return (
       <TouchableOpacity
         style={styles.row}
@@ -91,18 +86,14 @@ export default function LibraryScreen() {
         activeOpacity={0.7}
       >
         <Image
-          source={artwork ?? undefined}
+          source={artworkUrl(baseUrl, item.id) ?? undefined}
           style={styles.rowArtwork}
           contentFit="cover"
           transition={150}
         />
         <View style={styles.rowInfo}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <Text style={styles.rowMeta}>
-            Album · {item.artist}
-          </Text>
+          <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={styles.rowMeta}>Album · {item.artist}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -120,11 +111,31 @@ export default function LibraryScreen() {
           <Text style={styles.artistInitials}>{initials}</Text>
         </View>
         <View style={styles.rowInfo}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.rowMeta}>Artist</Text>
+          <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.rowMeta}>Artist · {item.album_count} albums</Text>
         </View>
+      </TouchableOpacity>
+    );
+  }
+
+  function renderSong({ item }: { item: TrackSummary }) {
+    return (
+      <TouchableOpacity
+        style={styles.row}
+        onPress={() => playTrack(item, songs)}
+        activeOpacity={0.7}
+      >
+        <Image
+          source={artworkUrl(baseUrl, item.id) ?? undefined}
+          style={styles.rowArtwork}
+          contentFit="cover"
+          transition={100}
+        />
+        <View style={styles.rowInfo}>
+          <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={styles.rowMeta}>{item.artist}</Text>
+        </View>
+        <DownloadButton track={item} size={16} />
       </TouchableOpacity>
     );
   }
@@ -149,22 +160,16 @@ export default function LibraryScreen() {
   }
 
   function listData(): Array<{ type: string; item: PlaylistSummary | AlbumSummary | ArtistSummary | TrackSummary }> {
-    if (filter === 'downloads') {
-      return downloadedTracks.map((item) => ({ type: 'download', item }));
-    }
-    if (filter === 'albums') {
-      return (albums ?? []).map((item) => ({ type: 'album', item }));
-    }
-    if (filter === 'artists') {
-      return (artists ?? []).map((item) => ({ type: 'artist', item }));
-    }
+    if (filter === 'downloads') return downloadedTracks.map((item) => ({ type: 'download', item }));
+    if (filter === 'albums')    return albums.map((item) => ({ type: 'album', item }));
+    if (filter === 'artists')   return artists.map((item) => ({ type: 'artist', item }));
+    if (filter === 'songs')     return songs.map((item) => ({ type: 'song', item }));
+
     const liked: PlaylistSummary = { id: 'liked', name: 'Liked Songs', track_count: 0 };
-    const playlistItems = [liked, ...(playlists ?? [])].map((item) => ({
-      type: 'playlist',
-      item,
-    }));
+    const playlistItems = [liked, ...playlists].map((item) => ({ type: 'playlist', item }));
     if (filter === 'playlists') return playlistItems;
-    const albumItems = (albums ?? []).map((item) => ({ type: 'album', item }));
+
+    const albumItems = albums.map((item) => ({ type: 'album', item }));
     return [...playlistItems, ...albumItems];
   }
 
@@ -175,7 +180,14 @@ export default function LibraryScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Your Library</Text>
-        <Text style={styles.searchIcon}>🔍</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/stats')} hitSlop={12}>
+            <Ionicons name="stats-chart-outline" size={22} color={Colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/search')} hitSlop={12}>
+            <Ionicons name="search-outline" size={22} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Filter pills */}
@@ -190,8 +202,15 @@ export default function LibraryScreen() {
         </View>
       )}
 
+      {/* Songs count */}
+      {filter === 'songs' && songs.length > 0 && (
+        <View style={styles.downloadsHeader}>
+          <Text style={styles.downloadsCount}>{songs.length} songs in library</Text>
+        </View>
+      )}
+
       {/* List */}
-      {isLoading ? (
+      {showLoading ? (
         <ActivityIndicator color={Colors.accent} style={styles.loader} />
       ) : filter === 'downloads' && downloadedTracks.length === 0 ? (
         <View style={styles.emptyState}>
@@ -206,9 +225,10 @@ export default function LibraryScreen() {
           data={data}
           keyExtractor={(entry, i) => `${entry.type}-${(entry.item as { id: string }).id}-${i}`}
           renderItem={({ item: entry }) => {
-            if (entry.type === 'album') return renderAlbum({ item: entry.item as AlbumSummary });
-            if (entry.type === 'artist') return renderArtist({ item: entry.item as ArtistSummary });
+            if (entry.type === 'album')    return renderAlbum({ item: entry.item as AlbumSummary });
+            if (entry.type === 'artist')   return renderArtist({ item: entry.item as ArtistSummary });
             if (entry.type === 'download') return renderDownloadedTrack({ item: entry.item as TrackSummary });
+            if (entry.type === 'song')     return renderSong({ item: entry.item as TrackSummary });
             return renderPlaylist({ item: entry.item as PlaylistSummary });
           }}
           contentContainerStyle={styles.listContent}
@@ -237,8 +257,10 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xxl,
     fontWeight: '700',
   },
-  searchIcon: {
-    fontSize: 22,
+  headerActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    alignItems: 'center',
   },
   loader: {
     marginTop: Spacing.xxl,

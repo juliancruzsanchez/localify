@@ -1,22 +1,33 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
-import { useServer } from '../hooks/useServer';
 import { artworkUrl } from '../hooks/useLibrary';
+import { useServer } from '../hooks/useServer';
 import { usePlayerStore } from '../store/playerStore';
 
 export function NowPlayingBar() {
   const router = useRouter();
   const { baseUrl } = useServer();
-  const { currentTrack, isPlaying, positionMs, durationMs, togglePlayPause, playNext, playPrevious } =
-    usePlayerStore();
+  const {
+    currentTrack,
+    isPlaying,
+    positionMs,
+    durationMs,
+    togglePlayPause,
+    playNext,
+    playPrevious,
+    likedTrackIds,
+    toggleLike,
+  } = usePlayerStore();
 
   if (!currentTrack) return null;
 
   const artwork = artworkUrl(baseUrl, currentTrack.id);
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const isLiked = !!likedTrackIds[currentTrack.id];
 
   return (
     <TouchableOpacity
@@ -24,10 +35,10 @@ export function NowPlayingBar() {
       activeOpacity={0.9}
       onPress={() => router.push('/now-playing')}
     >
-      {/* Progress bar */}
+      {/* Thin progress line at top */}
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { flex: progress }]} />
-        <View style={{ flex: 1 - progress }} />
+        <View style={[styles.progressFill, { flex: Math.max(0.001, progress) }]} />
+        <View style={{ flex: Math.max(0.001, 1 - progress) }} />
       </View>
 
       <View style={styles.inner}>
@@ -51,14 +62,32 @@ export function NowPlayingBar() {
 
         {/* Controls */}
         <View style={styles.controls}>
+          <TouchableOpacity
+            onPress={() => toggleLike(currentTrack.id)}
+            hitSlop={12}
+            style={styles.heartBtn}
+          >
+            <Ionicons
+              name={isLiked ? 'heart' : 'heart-outline'}
+              size={20}
+              color={isLiked ? Colors.accent : Colors.textDim}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={() => playPrevious()} hitSlop={12} style={styles.ctrlBtn}>
-            <Text style={styles.ctrlIcon}>⏮</Text>
+            <Ionicons name="play-skip-back" size={22} color={Colors.text} />
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => togglePlayPause()} hitSlop={8} style={styles.playBtn}>
-            <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶'}</Text>
+            <Ionicons
+              name={isPlaying ? 'pause' : 'play'}
+              size={20}
+              color={Colors.background}
+            />
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => playNext()} hitSlop={12} style={styles.ctrlBtn}>
-            <Text style={styles.ctrlIcon}>⏭</Text>
+            <Ionicons name="play-skip-forward" size={22} color={Colors.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -74,7 +103,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     height: 2,
-    backgroundColor: Colors.textDim,
+    backgroundColor: Colors.border,
     flexDirection: 'row',
   },
   progressFill: {
@@ -96,8 +125,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   artwork: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: Radius.sm,
     backgroundColor: Colors.surface,
     flexShrink: 0,
@@ -114,20 +143,19 @@ const styles = StyleSheet.create({
   artist: {
     color: Colors.textMuted,
     fontSize: FontSize.sm,
-    marginTop: 2,
+    marginTop: 1,
   },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
     flexShrink: 0,
+  },
+  heartBtn: {
+    padding: 4,
   },
   ctrlBtn: {
     padding: 4,
-  },
-  ctrlIcon: {
-    color: Colors.text,
-    fontSize: FontSize.lg,
   },
   playBtn: {
     width: 36,
@@ -136,9 +164,5 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.text,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  playIcon: {
-    color: Colors.background,
-    fontSize: FontSize.md,
   },
 });
