@@ -52,7 +52,7 @@ function PlaylistNavLink({ playlist, collapsed }: { playlist: Playlist; collapse
             <ListMusic size={14} className="text-[var(--color-text-dim)]" />
           )}
         </div>
-        {!collapsed && <span className="truncate leading-tight">{playlist.name}</span>}
+        {!collapsed && <span className="truncate min-w-0 leading-tight">{playlist.name}</span>}
       </NavLink>
     </PlaylistContextMenu>
   );
