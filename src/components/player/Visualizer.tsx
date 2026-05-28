@@ -824,12 +824,14 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
       ctx.beginPath();
       ctx.arc(sunCx, sunCy, sunR, 0, Math.PI * 2);
       ctx.clip();
-      const sunHue  = hexToHue(c.sun);
+      const [sR, sG, sB] = hexToRgb(c.sun);
+      const sunHue = hexToHue(c.sun);
+      const [, sunS, sunL] = rgbToHsl(sR, sG, sB);
       const sunGrad = ctx.createLinearGradient(0, sunCy - sunR, 0, sunCy + sunR);
-      sunGrad.addColorStop(0,    `hsl(${sunHue},100%,78%)`);
-      sunGrad.addColorStop(0.25, `hsl(${(sunHue + 20) % 360},100%,52%)`);
-      sunGrad.addColorStop(0.55, `hsl(${(sunHue + 55) % 360},90%,35%)`);
-      sunGrad.addColorStop(1,    `hsl(${(sunHue + 110) % 360},80%,16%)`);
+      sunGrad.addColorStop(0,    c.sun);
+      sunGrad.addColorStop(0.25, `hsl(${sunHue},${(sunS * 100).toFixed(0)}%,${Math.max(8, sunL * 100 * 0.65).toFixed(0)}%)`);
+      sunGrad.addColorStop(0.55, `hsl(${sunHue},${(sunS * 100 * 0.85).toFixed(0)}%,${Math.max(5, sunL * 100 * 0.35).toFixed(0)}%)`);
+      sunGrad.addColorStop(1,    `hsl(${sunHue},${(sunS * 100 * 0.7).toFixed(0)}%,${Math.max(2, sunL * 100 * 0.18).toFixed(0)}%)`);
       ctx.fillStyle = sunGrad;
       ctx.fillRect(sunCx - sunR, sunCy - sunR, sunR * 2, sunR * 2);
       for (let i = 0; i < 14; i++) {
@@ -1107,72 +1109,132 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
     // ─── ALBUM AURA ───────────────────────────────────────────────────────────
 
     function drawArtwork(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[]) {
-      const bass   = b[0];
-      const mid    = b[10];
-      const high   = b[22];
-      const beat   = beatDetect(bass);
-      const cols   = artworkColorsRef.current;
+      const bass = b[0];
+      const mid  = b[10];
+      const high = b[22];
+      const beat = beatDetect(bass);
+      const cols = artworkColorsRef.current;
       const [c0, c1, c2] = cols;
-      const cx     = w / 2;
-      const cy     = h / 2;
-      const dim    = Math.min(w, h);
-      const now    = Date.now();
+      const cx   = w / 2;
+      const cy   = h / 2;
+      const dim  = Math.min(w, h);
+      const now  = Date.now();
 
-      // Base fill
       ctx.fillStyle = "#010106";
       ctx.fillRect(0, 0, w, h);
 
-      // Laser light show background in album palette colors
-      ctx.save();
+      // ── Background: aurora flows + concentric rings ──────────────────────────
       ctx.globalCompositeOperation = "screen";
-      const LASERS = 14;
-      for (let i = 0; i < LASERS; i++) {
-        const t     = i / LASERS;
-        const col   = cols[i % 3];
-        const sweep = Math.sin(now * 0.00022 * (1 + t * 0.5) + i * 2.17) * 0.95;
-        const angle = (t - 0.5) * Math.PI * 1.5 + sweep;
-        const ox    = cx + Math.sin(now * 0.00009 + i * 1.3) * w * 0.06;
-        const oy    = h * 0.91;
-        const len   = Math.max(w, h) * 2.2;
-        const ex    = ox + Math.sin(angle) * len;
-        const ey    = oy - Math.cos(angle) * len;
-        const alpha = 0.07 + bass * 0.16 + (beat ? 0.10 : 0);
-        const lw    = 0.8 + bass * 2.2 + (beat ? 1.2 : 0);
-        const midX  = ox + Math.sin(angle) * len * 0.45;
-        const midY  = oy - Math.cos(angle) * len * 0.45;
-        const grad  = ctx.createLinearGradient(ox, oy, midX, midY);
-        grad.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${Math.min(1, alpha * 3)})`);
-        grad.addColorStop(0.4, `rgba(${col[0]},${col[1]},${col[2]},${alpha})`);
-        grad.addColorStop(1,   `rgba(${col[0]},${col[1]},${col[2]},0)`);
-        ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.75)`;
-        ctx.shadowBlur  = 12 + bass * 22 + (beat ? 14 : 0);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth   = lw;
-        ctx.lineCap     = "round";
+
+      // 8 horizontal bezier curves flowing across the canvas
+      const AURORA = 8;
+      for (let ai = 0; ai < AURORA; ai++) {
+        const t     = ai / AURORA;
+        const drift = now * 0.000042 * (ai % 2 === 0 ? 1 : -1.1) + ai * 1.4;
+        const baseY = h * (0.08 + t * 0.84);
+        const bIdx  = Math.floor(t * BAR_COUNT);
+        const amp   = b[bIdx] * 0.6 + bass * 0.4;
+        const waveH = h * (0.04 + amp * 0.15);
+        const col   = cols[ai % 3];
+        const sy    = baseY + Math.sin(drift)       * waveH * 0.5;
+        const ey    = baseY + Math.sin(drift + 1.2) * waveH * 0.5;
+        const cp1y  = baseY + Math.sin(drift + 0.6) * waveH;
+        const cp2y  = baseY + Math.sin(drift + 2.0) * waveH;
+
+        ctx.lineCap     = "butt";
+        ctx.lineWidth   = 10 + amp * 20;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.022 + amp * 0.048})`;
         ctx.beginPath();
-        ctx.moveTo(ox, oy);
-        ctx.lineTo(ex, ey);
+        ctx.moveTo(0, sy);
+        ctx.bezierCurveTo(w * 0.25, cp1y, w * 0.75, cp2y, w, ey);
+        ctx.stroke();
+
+        ctx.lineWidth   = 0.65;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.07 + amp * 0.13})`;
+        ctx.beginPath();
+        ctx.moveTo(0, sy);
+        ctx.bezierCurveTo(w * 0.25, cp1y, w * 0.75, cp2y, w, ey);
         ctx.stroke();
       }
-      // Haze at origin point
-      for (let k = 0; k < 3; k++) {
-        const col  = cols[k];
-        const hx   = cx + Math.sin(now * 0.0001 + k * 2.1) * w * 0.08;
-        const hg   = ctx.createRadialGradient(hx, h * 0.91, 0, hx, h * 0.91, 60 + bass * 80);
-        hg.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${0.25 + bass * 0.30})`);
-        hg.addColorStop(1,   `rgba(${col[0]},${col[1]},${col[2]},0)`);
-        ctx.fillStyle = hg;
-        ctx.fillRect(0, 0, w, h);
-      }
-      ctx.restore();
 
-      // Three reactive color blobs (screen blend) in the extracted palette
-      ctx.save();
+      // 4 concentric rings pulsing with frequency bands
+      const BG_RINGS = 4;
+      for (let ri = 0; ri < BG_RINGS; ri++) {
+        const bIdx     = Math.floor(((ri + 1) / (BG_RINGS + 1)) * BAR_COUNT);
+        const freqBand = b[bIdx];
+        const rBase    = dim * (0.24 + ri * 0.10);
+        const rPulse   = rBase * (1 + freqBand * 0.14 + bass * 0.06);
+        const col      = cols[ri % 3];
+        const alpha    = 0.05 + freqBand * 0.13;
+
+        ctx.lineWidth   = 12 + freqBand * 18;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha * 0.35})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rPulse, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.lineWidth   = 0.65;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rPulse, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // ── Laser light show (double-stroke glow — no shadowBlur) ──────────────
+      // Precompute angles and origins once, reuse in both passes.
+      const LASERS   = 9;
+      const laserOy  = h * 0.91;
+      const laserLen = Math.max(w, h) * 2.2;
+      const lSin     = new Float32Array(LASERS);
+      const lCos     = new Float32Array(LASERS);
+      const lOx      = new Float32Array(LASERS);
+      for (let i = 0; i < LASERS; i++) {
+        const t      = i / LASERS;
+        const sweep  = Math.sin(now * 0.00022 * (1 + t * 0.5) + i * 2.17) * 0.95;
+        const angle  = (t - 0.5) * Math.PI * 1.5 + sweep;
+        lSin[i]      = Math.sin(angle);
+        lCos[i]      = Math.cos(angle);
+        lOx[i]       = cx + Math.sin(now * 0.00009 + i * 1.3) * w * 0.06;
+      }
+
       ctx.globalCompositeOperation = "screen";
-      const blobData = [
-        { x: cx + Math.sin(now * 0.00043) * w * 0.18,        y: cy + Math.cos(now * 0.00031) * h * 0.15,        pulse: bass,  col: c0 },
-        { x: cx + Math.sin(now * 0.00057 + 2.0) * w * 0.20,  y: cy + Math.cos(now * 0.00039 + 1.0) * h * 0.18,  pulse: mid,   col: c1 },
-        { x: cx + Math.sin(now * 0.00037 + 4.2) * w * 0.15,  y: cy + Math.cos(now * 0.00047 + 3.1) * h * 0.20,  pulse: high,  col: c2 },
+      ctx.lineCap = "round";
+      const beatBoost = beat ? 0.08 : 0;
+
+      // Outer halo pass
+      ctx.lineWidth = 9 + bass * 14 + (beat ? 5 : 0);
+      for (let i = 0; i < LASERS; i++) {
+        const col = cols[i % 3];
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.055 + bass * 0.10 + beatBoost})`;
+        ctx.beginPath();
+        ctx.moveTo(lOx[i], laserOy);
+        ctx.lineTo(lOx[i] + lSin[i] * laserLen, laserOy - lCos[i] * laserLen);
+        ctx.stroke();
+      }
+      // Core pass
+      ctx.lineWidth = 0.8 + bass * 1.4;
+      for (let i = 0; i < LASERS; i++) {
+        const col = cols[i % 3];
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${Math.min(1, 0.22 + bass * 0.38 + beatBoost * 2)})`;
+        ctx.beginPath();
+        ctx.moveTo(lOx[i], laserOy);
+        ctx.lineTo(lOx[i] + lSin[i] * laserLen, laserOy - lCos[i] * laserLen);
+        ctx.stroke();
+      }
+
+      // Haze at origin (single gradient fill)
+      const hcol = cols[Math.floor(now * 0.0003) % 3];
+      const hg   = ctx.createRadialGradient(cx, laserOy, 0, cx, laserOy, 50 + bass * 60);
+      hg.addColorStop(0, `rgba(${hcol[0]},${hcol[1]},${hcol[2]},${0.20 + bass * 0.26})`);
+      hg.addColorStop(1, `rgba(${hcol[0]},${hcol[1]},${hcol[2]},0)`);
+      ctx.fillStyle = hg;
+      ctx.fillRect(0, 0, w, h);
+
+      // ── Color blobs ─────────────────────────────────────────────────────────
+      const blobData: Array<{ x: number; y: number; pulse: number; col: [number,number,number] }> = [
+        { x: cx + Math.sin(now * 0.00043) * w * 0.18,       y: cy + Math.cos(now * 0.00031) * h * 0.15,       pulse: bass, col: c0 },
+        { x: cx + Math.sin(now * 0.00057 + 2.0) * w * 0.20, y: cy + Math.cos(now * 0.00039 + 1.0) * h * 0.18, pulse: mid,  col: c1 },
+        { x: cx + Math.sin(now * 0.00037 + 4.2) * w * 0.15, y: cy + Math.cos(now * 0.00047 + 3.1) * h * 0.20, pulse: high, col: c2 },
       ];
       for (const bd of blobData) {
         const br = dim * (0.42 + bd.pulse * 0.28);
@@ -1183,62 +1245,75 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
       }
-      ctx.restore();
+      ctx.globalCompositeOperation = "source-over";
 
-      // Radial bars radiating from just outside the artwork frame
-      const artSize = dim * (0.30 + bass * 0.035);
+      // ── Radial bars (double-stroke glow, no per-bar shadowBlur) ────────────
+      const artSize = dim * (0.22 + bass * 0.028);
       const innerR  = artSize / 2 + 12;
       const maxBar  = dim * 0.22;
 
+      // Precompute bar geometry once
+      const bAngle = new Float32Array(BAR_COUNT);
+      const bLen   = new Float32Array(BAR_COUNT);
+      const bCosA  = new Float32Array(BAR_COUNT);
+      const bSinA  = new Float32Array(BAR_COUNT);
       for (let i = 0; i < BAR_COUNT; i++) {
-        const barLen = b[i] * maxBar;
-        if (barLen < 1) continue;
-        const angle = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2;
-        const t     = i / BAR_COUNT;
-        const col   = t < 0.33 ? c0 : t < 0.66 ? c1 : c2;
-        const alpha = 0.55 + b[i] * 0.45;
-
-        ctx.save();
-        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
-        ctx.lineWidth   = 1.5 + b[i] * 3.5;
-        ctx.lineCap     = "round";
-        ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.8)`;
-        ctx.shadowBlur  = 10 + b[i] * 20;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(angle) * innerR,            cy + Math.sin(angle) * innerR);
-        ctx.lineTo(cx + Math.cos(angle) * (innerR + barLen), cy + Math.sin(angle) * (innerR + barLen));
-        ctx.stroke();
-        ctx.restore();
+        bLen[i]   = b[i] * maxBar;
+        bAngle[i] = (i / BAR_COUNT) * Math.PI * 2 - Math.PI / 2;
+        bCosA[i]  = Math.cos(bAngle[i]);
+        bSinA[i]  = Math.sin(bAngle[i]);
       }
 
-      // Beat burst: sparks from the tip of each bar
+      ctx.lineCap = "round";
+      // Outer halo pass
+      for (let i = 0; i < BAR_COUNT; i++) {
+        if (bLen[i] < 2) continue;
+        const t   = i / BAR_COUNT;
+        const col = t < 0.33 ? c0 : t < 0.66 ? c1 : c2;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.10 + b[i] * 0.16})`;
+        ctx.lineWidth   = 9 + b[i] * 16;
+        ctx.beginPath();
+        ctx.moveTo(cx + bCosA[i] * innerR,            cy + bSinA[i] * innerR);
+        ctx.lineTo(cx + bCosA[i] * (innerR + bLen[i]), cy + bSinA[i] * (innerR + bLen[i]));
+        ctx.stroke();
+      }
+      // Core pass
+      for (let i = 0; i < BAR_COUNT; i++) {
+        if (bLen[i] < 1) continue;
+        const t   = i / BAR_COUNT;
+        const col = t < 0.33 ? c0 : t < 0.66 ? c1 : c2;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.55 + b[i] * 0.45})`;
+        ctx.lineWidth   = 1.5 + b[i] * 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + bCosA[i] * innerR,            cy + bSinA[i] * innerR);
+        ctx.lineTo(cx + bCosA[i] * (innerR + bLen[i]), cy + bSinA[i] * (innerR + bLen[i]));
+        ctx.stroke();
+      }
+
+      // Beat burst (infrequent — no shadowBlur needed for brief flash)
       if (beat) {
+        ctx.lineWidth = 1;
         for (let i = 0; i < 24; i++) {
           const angle  = (i / 24) * Math.PI * 2;
           const col    = i % 3 === 0 ? c0 : i % 3 === 1 ? c1 : c2;
           const burstR = innerR + b[i % BAR_COUNT] * maxBar;
           const endR   = burstR + 16 + Math.random() * 44;
-          ctx.save();
           ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.75)`;
           ctx.lineWidth   = 0.8 + Math.random();
-          ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},0.9)`;
-          ctx.shadowBlur  = 12;
           ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(angle) * burstR,        cy + Math.sin(angle) * burstR);
-          ctx.lineTo(cx + Math.cos(angle + 0.08) * endR,   cy + Math.sin(angle + 0.08) * endR);
+          ctx.moveTo(cx + Math.cos(angle) * burstR,       cy + Math.sin(angle) * burstR);
+          ctx.lineTo(cx + Math.cos(angle + 0.08) * endR,  cy + Math.sin(angle + 0.08) * endR);
           ctx.stroke();
-          ctx.restore();
         }
       }
 
-      // Album art (centered, slightly pulsing with bass, rounded corners)
+      // ── Album art ───────────────────────────────────────────────────────────
       const img    = artworkImgRef.current;
       const artX   = cx - artSize / 2;
       const artY   = cy - artSize / 2;
       const radius = artSize * 0.07;
 
       if (img) {
-        // Halo glow behind art
         const haloR = artSize / 2 + 12 + bass * 40;
         const halo  = ctx.createRadialGradient(cx, cy, artSize / 2 - 10, cx, cy, haloR);
         halo.addColorStop(0,   `rgba(${c0[0]},${c0[1]},${c0[2]},${0.50 + bass * 0.40})`);
@@ -1247,7 +1322,6 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         ctx.fillStyle = halo;
         ctx.fillRect(0, 0, w, h);
 
-        // Image clipped to rounded rect
         ctx.save();
         ctx.beginPath();
         ctx.roundRect(artX, artY, artSize, artSize, radius);
@@ -1255,7 +1329,7 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         ctx.drawImage(img, artX, artY, artSize, artSize);
         ctx.restore();
 
-        // Glowing border
+        // One shadowBlur per frame is acceptable for the art border
         ctx.save();
         ctx.strokeStyle = `rgba(${c0[0]},${c0[1]},${c0[2]},${0.30 + bass * 0.40})`;
         ctx.lineWidth   = 1.5;
@@ -1266,17 +1340,16 @@ export function Visualizer({ className, style, colors, artworkHash, mode, onMode
         ctx.stroke();
         ctx.restore();
       } else {
-        // Loading / no artwork — pulsing circle placeholder
         const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, artSize / 2);
-        g.addColorStop(0,   `rgba(${c0[0]},${c0[1]},${c0[2]},${0.20 + bass * 0.28})`);
-        g.addColorStop(1,   "transparent");
+        g.addColorStop(0, `rgba(${c0[0]},${c0[1]},${c0[2]},${0.20 + bass * 0.28})`);
+        g.addColorStop(1, "transparent");
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(cx, cy, artSize / 2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Edge vignette to focus on center
+      // Edge vignette
       const vg = ctx.createRadialGradient(cx, cy, dim * 0.24, cx, cy, Math.max(w, h) * 0.72);
       vg.addColorStop(0, "transparent");
       vg.addColorStop(1, "rgba(0,0,0,0.62)");
