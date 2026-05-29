@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Dimensions,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,10 +13,13 @@ import {
 import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
 import { artworkUrl } from '../hooks/useLibrary';
 import { useServer } from '../hooks/useServer';
+import { useLyrics, useCurrentLyricIndex, useArtworkColor } from '../hooks/useLyrics';
 import { usePlayerStore } from '../store/playerStore';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const ARTWORK_SIZE = SCREEN_WIDTH - Spacing.xl * 2;
+// Compact artwork when lyrics are available
+const ARTWORK_SIZE_COMPACT = SCREEN_WIDTH * 0.45;
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -36,6 +41,27 @@ export default function NowPlayingModal() {
     playPrevious,
   } = usePlayerStore();
 
+  const { lines } = useLyrics(currentTrack?.id, baseUrl);
+  const currentIndex = useCurrentLyricIndex(lines, positionMs);
+  const bgColor = useArtworkColor(currentTrack?.id, baseUrl);
+  const lyricsScrollRef = useRef<ScrollView>(null);
+  const lineRefs = useRef<(View | null)[]>([]);
+
+  // Auto-scroll lyrics to the current line
+  useEffect(() => {
+    if (currentIndex < 0 || !lyricsScrollRef.current) return;
+    const ref = lineRefs.current[currentIndex];
+    if (ref) {
+      (ref as any).measureLayout?.(
+        lyricsScrollRef.current,
+        (_x: number, y: number) => {
+          lyricsScrollRef.current?.scrollTo({ y: Math.max(0, y - 60), animated: true });
+        },
+        () => {},
+      );
+    }
+  }, [currentIndex]);
+
   if (!currentTrack) {
     router.back();
     return null;
@@ -43,16 +69,22 @@ export default function NowPlayingModal() {
 
   const artwork = artworkUrl(baseUrl, currentTrack.id);
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const hasLyrics = lines && lines.length > 0;
+  const artSize = hasLyrics ? ARTWORK_SIZE_COMPACT : ARTWORK_SIZE;
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={[bgColor, '#0d0d0d', '#0d0d0d']}
+      locations={[0, 0.55, 1]}
+      style={styles.container}
+    >
       {/* Dismiss handle */}
       <View style={styles.handle} />
 
       {/* Artwork */}
       <Image
         source={artwork ?? undefined}
-        style={styles.artwork}
+        style={[styles.artwork, { width: artSize, height: artSize }]}
         contentFit="cover"
         transition={200}
       />
@@ -83,7 +115,7 @@ export default function NowPlayingModal() {
         </View>
       </View>
 
-      {/* Controls — matches desktop: previous, play/pause, next */}
+      {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={() => playPrevious()} hitSlop={16} style={styles.ctrlBtn}>
           <Text style={styles.ctrlIcon}>⏮</Text>
@@ -101,14 +133,47 @@ export default function NowPlayingModal() {
           <Text style={styles.ctrlIcon}>⏭</Text>
         </TouchableOpacity>
       </View>
-    </View>
+
+      {/* Lyrics */}
+      {hasLyrics && (
+        <View style={styles.lyricsContainer}>
+          <ScrollView
+            ref={lyricsScrollRef}
+            style={styles.lyricsScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {lines!.map((line, i) => {
+              const isCurrent = i === currentIndex;
+              const isPast = i < currentIndex;
+              return (
+                <View
+                  key={i}
+                  ref={(el) => { lineRefs.current[i] = el; }}
+                  style={styles.lyricLine}
+                >
+                  <Text
+                    style={[
+                      styles.lyricText,
+                      isCurrent && styles.lyricCurrent,
+                      isPast && styles.lyricPast,
+                    ]}
+                  >
+                    {line.text}
+                  </Text>
+                </View>
+              );
+            })}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      )}
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md,
     alignItems: 'center',
@@ -121,8 +186,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   artwork: {
-    width: ARTWORK_SIZE,
-    height: ARTWORK_SIZE,
     borderRadius: Radius.lg,
     backgroundColor: Colors.surfaceElevated,
     marginBottom: Spacing.xl,
@@ -184,6 +247,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.xl,
     width: '100%',
+    marginBottom: Spacing.lg,
   },
   ctrlBtn: {
     padding: Spacing.sm,
@@ -204,5 +268,33 @@ const styles = StyleSheet.create({
     color: Colors.background,
     fontSize: FontSize.xxl,
     marginLeft: 4,
+  },
+  lyricsContainer: {
+    flex: 1,
+    width: '100%',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: Spacing.md,
+  },
+  lyricsScroll: {
+    flex: 1,
+  },
+  lyricLine: {
+    marginBottom: Spacing.md,
+  },
+  lyricText: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: FontSize.lg,
+    fontWeight: '600',
+    lineHeight: FontSize.lg * 1.4,
+  },
+  lyricCurrent: {
+    color: Colors.text,
+    fontSize: FontSize.xl,
+    fontWeight: '700',
+  },
+  lyricPast: {
+    color: 'rgba(255,255,255,0.25)',
   },
 });

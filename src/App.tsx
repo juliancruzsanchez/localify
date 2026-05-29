@@ -10,6 +10,7 @@ import { NowPlayingBar } from "@/components/layout/NowPlayingBar";
 import { QueuePanel } from "@/components/queue/QueuePanel";
 import { DragOverlayContent } from "@/components/drag/DragOverlay";
 import { SettingsView } from "@/views/SettingsView";
+import { LyricsView } from "@/components/lyrics/LyricsView";
 import { useUiStore } from "@/store/uiStore";
 import { usePlayerStore } from "@/store/playerStore";
 import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
@@ -21,7 +22,7 @@ import type { PlayerState, Track } from "@/types";
 const QUEUE_PANEL_WIDTH = 280;
 
 export default function App() {
-  const { sidebarCollapsed, queueOpen, settingsOpen, setSettingsOpen } = useUiStore();
+  const { sidebarCollapsed, queueOpen, settingsOpen, setSettingsOpen, lyricsOpen } = useUiStore();
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
   const [activeTrack, setActiveTrack] = useState<Track | null>(null);
   const { mutate: addTrackToPlaylist } = useAddTrackToPlaylist();
@@ -129,9 +130,11 @@ export default function App() {
             display: "flex",
             flexDirection: "column",
             borderRadius: "0 0 12px 12px",
+            position: "relative",
           }}
         >
           <Outlet />
+          {lyricsOpen && <LyricsView />}
         </main>
         {queueOpen && <QueuePanel />}
         <NowPlayingBar />

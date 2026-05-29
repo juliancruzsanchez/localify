@@ -11,6 +11,8 @@ interface UiStore {
   setAlbumArtExpanded: (v: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (v: boolean) => void;
+  lyricsOpen: boolean;
+  toggleLyrics: () => void;
   downloads: Record<string, DownloadState>;
   setDownload: (videoId: string, state: DownloadState) => void;
 }
@@ -25,6 +27,8 @@ export const useUiStore = create<UiStore>((set) => ({
   setAlbumArtExpanded: (v) => set({ albumArtExpanded: v }),
   settingsOpen: false,
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  lyricsOpen: false,
+  toggleLyrics: () => set((s) => ({ lyricsOpen: !s.lyricsOpen })),
   downloads: {},
   setDownload: (videoId, state) =>
     set((s) => ({ downloads: { ...s.downloads, [videoId]: state } })),

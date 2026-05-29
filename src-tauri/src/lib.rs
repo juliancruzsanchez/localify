@@ -10,6 +10,7 @@ mod discord_rpc;
 mod plugins;
 mod media_control;
 mod watcher;
+mod lyrics;
 
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -43,6 +44,7 @@ use commands::remote_stream::{remote_stream_start, remote_stream_stop, remote_st
 use commands::discord_rpc::{discord_rpc_enable, discord_rpc_disable, discord_rpc_get_status};
 use discord_rpc::DiscordRpcHandle;
 use commands::ytdlp::{ytdlp_check, ytdlp_install, ytdlp_search, ytdlp_download};
+use commands::lyrics::get_lyrics;
 use commands::plugins::{
     plugin_list, plugin_install, plugin_uninstall,
     plugin_get_settings, plugin_save_settings,
@@ -223,6 +225,8 @@ pub fn run() {
             ytdlp_install,
             ytdlp_search,
             ytdlp_download,
+            // Lyrics
+            get_lyrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Localify");

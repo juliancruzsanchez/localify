@@ -1,4 +1,4 @@
-import { Shuffle, Repeat, Repeat1, ListMusic, Activity } from "lucide-react";
+import { Shuffle, Repeat, Repeat1, ListMusic, Activity, Mic2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { usePlayerStore } from "@/store/playerStore";
 import { useUiStore } from "@/store/uiStore";
@@ -13,7 +13,7 @@ import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 
 export function NowPlayingBar() {
   const { shuffleEnabled, repeatMode, toggleShuffle, cycleRepeat } = usePlayerStore();
-  const { queueOpen, toggleQueue } = useUiStore();
+  const { queueOpen, toggleQueue, lyricsOpen, toggleLyrics } = useUiStore();
   const navigate = useNavigate();
   const pluginRegistry = usePluginRegistrySnapshot();
   const pluginActions = pluginRegistry.getNowPlayingActions();
@@ -89,6 +89,17 @@ export function NowPlayingBar() {
             {action.icon}
           </button>
         ))}
+        <button
+          onClick={toggleLyrics}
+          className={cn(
+            "transition-colors flex-shrink-0",
+            lyricsOpen ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)] hover:text-white",
+          )}
+          aria-label="Toggle lyrics"
+          title="Lyrics"
+        >
+          <Mic2 size={18} />
+        </button>
         <button
           onClick={toggleQueue}
           className={cn(
