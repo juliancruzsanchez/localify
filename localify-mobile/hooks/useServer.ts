@@ -1,66 +1,62 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useState, useCallback } from 'react';
+import { useConnectionStore } from '../store/connectionStore';
 
-const SERVER_URL_KEY = 'localify_server_url';
+// Re-exported so existing imports (connect/settings screens) keep working.
+export { fetchWithTimeout, normalizeUrl } from '../lib/net';
 
-let cachedUrl: string | null = null;
-const listeners = new Set<(url: string | null) => void>();
-
-function notifyListeners(url: string | null) {
-  cachedUrl = url;
-  listeners.forEach((fn) => fn(url));
-}
+// ── Legacy helpers ─────────────────────────────────────────────────────────────
+// Older callers (statsStore, connect, settings) used these free functions.
+// They now delegate to the connection store, which manages the local/public
+// URL pair and the active (reachable) address.
 
 export async function loadServerUrl(): Promise<string | null> {
-  if (cachedUrl !== null) return cachedUrl;
-  const stored = await AsyncStorage.getItem(SERVER_URL_KEY);
-  cachedUrl = stored;
-  return stored;
+  const store = useConnectionStore.getState();
+  if (!store.loaded) await store.load();
+  const { activeUrl, localUrl, publicUrl } = useConnectionStore.getState();
+  return activeUrl ?? localUrl ?? publicUrl ?? null;
 }
 
 export async function saveServerUrl(rawInput: string): Promise<string> {
-  const trimmed = rawInput.trim();
-  const url = trimmed.startsWith('http') ? trimmed : `http://${trimmed}`;
-  await AsyncStorage.setItem(SERVER_URL_KEY, url);
-  notifyListeners(url);
-  return url;
+  await useConnectionStore.getState().setLocalUrl(rawInput);
+  await useConnectionStore.getState().check();
+  const { activeUrl, localUrl } = useConnectionStore.getState();
+  return activeUrl ?? localUrl ?? '';
 }
 
 export async function clearServerUrl(): Promise<void> {
-  await AsyncStorage.removeItem(SERVER_URL_KEY);
-  notifyListeners(null);
+  await useConnectionStore.getState().clear();
 }
 
-export function useServer(): {
+// ── Hook ────────────────────────────────────────────────────────────────────────
+
+export interface ServerInfo {
   baseUrl: string | null;
   isLoading: boolean;
+  isOffline: boolean;
+  isChecking: boolean;
+  localUrl: string | null;
+  publicUrl: string | null;
+  reconnect: () => Promise<boolean>;
   refresh: () => Promise<void>;
-} {
-  const [baseUrl, setBaseUrl] = useState<string | null>(cachedUrl);
-  const [isLoading, setIsLoading] = useState(cachedUrl === null);
+}
 
-  useEffect(() => {
-    const listener = (url: string | null) => setBaseUrl(url);
-    listeners.add(listener);
+export function useServer(): ServerInfo {
+  const activeUrl = useConnectionStore((s) => s.activeUrl);
+  const isOffline = useConnectionStore((s) => s.isOffline);
+  const isChecking = useConnectionStore((s) => s.isChecking);
+  const loaded = useConnectionStore((s) => s.loaded);
+  const localUrl = useConnectionStore((s) => s.localUrl);
+  const publicUrl = useConnectionStore((s) => s.publicUrl);
+  const reconnect = useConnectionStore((s) => s.reconnect);
+  const load = useConnectionStore((s) => s.load);
 
-    if (cachedUrl === null) {
-      loadServerUrl().then((url) => {
-        setBaseUrl(url);
-        setIsLoading(false);
-      });
-    } else {
-      setIsLoading(false);
-    }
-
-    return () => {
-      listeners.delete(listener);
-    };
-  }, []);
-
-  const refresh = useCallback(async () => {
-    const url = await loadServerUrl();
-    setBaseUrl(url);
-  }, []);
-
-  return { baseUrl, isLoading, refresh };
+  return {
+    baseUrl: activeUrl,
+    isLoading: !loaded,
+    isOffline,
+    isChecking,
+    localUrl,
+    publicUrl,
+    reconnect,
+    refresh: load,
+  };
 }

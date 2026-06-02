@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { create } from 'zustand';
 import type { TrackSummary } from '../hooks/useLibrary';
 
@@ -10,6 +10,7 @@ export type DownloadStatus = 'idle' | 'downloading' | 'downloaded' | 'error';
 
 interface DownloadedTrack {
   uri: string;
+  artworkUri?: string;
   metadata: TrackSummary;
   downloadedAt: number;
 }
@@ -24,6 +25,9 @@ interface DownloadStore {
   downloadTrack: (track: TrackSummary, streamBaseUrl: string) => Promise<void>;
   deleteDownload: (trackId: string) => Promise<void>;
   getLocalUri: (trackId: string) => string | undefined;
+  // Resolve cached artwork for a track id, or an album id (via any downloaded
+  // track belonging to that album).
+  getArtworkUri: (id: string) => string | undefined;
   isDownloaded: (trackId: string) => boolean;
   getStatus: (trackId: string) => DownloadStatus;
 }
@@ -56,10 +60,14 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
       await Promise.all(
         Object.entries(parsed).map(async ([id, entry]) => {
           const info = await FileSystem.getInfoAsync(entry.uri);
-          if (info.exists) {
-            verified[id] = entry;
-            statusMap[id] = 'downloaded';
+          if (!info.exists) return;
+          let artworkUri = entry.artworkUri;
+          if (artworkUri) {
+            const artInfo = await FileSystem.getInfoAsync(artworkUri);
+            if (!artInfo.exists) artworkUri = undefined;
           }
+          verified[id] = { ...entry, artworkUri };
+          statusMap[id] = 'downloaded';
         }),
       );
 
@@ -98,8 +106,25 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
       const result = await task.downloadAsync();
       if (!result) throw new Error('Download returned null');
 
+      // Best-effort artwork caching so covers render offline. A missing cover
+      // shouldn't fail the track download.
+      let artworkUri: string | undefined;
+      try {
+        const artDest = `${DOWNLOADS_DIR}${track.id}.art`;
+        const artRes = await FileSystem.downloadAsync(
+          `${streamBaseUrl}/api/artwork/${track.id}`,
+          artDest,
+        );
+        if (artRes.status === 200) {
+          artworkUri = artRes.uri;
+        } else {
+          try { await FileSystem.deleteAsync(artRes.uri, { idempotent: true }); } catch {}
+        }
+      } catch {}
+
       const entry: DownloadedTrack = {
         uri: result.uri,
+        artworkUri,
         metadata: track,
         downloadedAt: Date.now(),
       };
@@ -125,6 +150,9 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
     const entry = downloads[trackId];
     if (entry) {
       try { await FileSystem.deleteAsync(entry.uri, { idempotent: true }); } catch {}
+      if (entry.artworkUri) {
+        try { await FileSystem.deleteAsync(entry.artworkUri, { idempotent: true }); } catch {}
+      }
     }
     set((s) => {
       const downloads = { ...s.downloads };
@@ -137,6 +165,17 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
   },
 
   getLocalUri: (trackId) => get().downloads[trackId]?.uri,
+
+  getArtworkUri: (id) => {
+    const downloads = get().downloads;
+    const direct = downloads[id]?.artworkUri;
+    if (direct) return direct;
+    // `id` may be an album id — reuse art from any downloaded track in it.
+    for (const entry of Object.values(downloads)) {
+      if (entry.metadata.album_id === id && entry.artworkUri) return entry.artworkUri;
+    }
+    return undefined;
+  },
 
   isDownloaded: (trackId) => get().status[trackId] === 'downloaded',
 

@@ -96,7 +96,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   playTrack: async (track: TrackSummary, queue?: TrackSummary[]) => {
     const { baseUrl, currentTrack, _playStartMs } = get();
-    if (!baseUrl) return;
+    const localUri = useDownloadStore.getState().getLocalUri(track.id);
+    // Need either a reachable server to stream from, or a local copy.
+    if (!baseUrl && !localUri) return;
 
     // Finalize stats for previous track
     if (currentTrack && _playStartMs > 0) {
@@ -123,7 +125,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       // ignore
     }
 
-    const localUri = useDownloadStore.getState().getLocalUri(track.id);
     const uri = localUri ?? `${baseUrl}/stream/${track.id}`;
     await sound.loadAsync({ uri }, { shouldPlay: true });
     sound.setOnPlaybackStatusUpdate(get()._onPlaybackStatus);

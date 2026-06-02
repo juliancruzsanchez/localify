@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use tauri::{State, Emitter};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::error::{AppError, Result};
 use crate::state::AppState;
 use crate::scanner::scan::{ScanContext, process_file};
@@ -60,6 +60,17 @@ fn yt_dlp_version(bin: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
+async fn has_ffmpeg() -> bool {
+    tokio::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -79,6 +90,8 @@ pub async fn ytdlp_install(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<YtdlpStatus> {
+    use tokio::io::AsyncWriteExt;
+
     let bin_dir = state.app_data_dir.join("bin");
     tokio::fs::create_dir_all(&bin_dir)
         .await
@@ -150,9 +163,13 @@ pub async fn ytdlp_install(
     Ok(YtdlpStatus { available: true, version, managed: true })
 }
 
+/// Search YouTube via yt-dlp, streaming each result as a `ytdlp:search_result` event
+/// so the UI can display results as they arrive rather than waiting for all of them.
+/// The IPC call itself also returns the full list once complete.
 #[tauri::command]
 pub async fn ytdlp_search(
     state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     query: String,
     limit: Option<u32>,
 ) -> Result<Vec<YtdlpSearchResult>> {
@@ -160,39 +177,52 @@ pub async fn ytdlp_search(
     let limit = limit.unwrap_or(8).min(25);
     let search_query = format!("ytsearch{}:{}", limit, query);
 
-    let output = tokio::process::Command::new(&bin)
+    let mut child = tokio::process::Command::new(&bin)
         .args([
             &search_query,
             "--flat-playlist",
             "--no-playlist",
             "--print", "%(id)s\t%(title)s\t%(uploader)s\t%(duration)s",
             "--no-warnings",
+            "--socket-timeout", "10",
         ])
-        .output()
-        .await
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .map_err(|e| AppError::Io(format!("Failed to run yt-dlp: {e}")))?;
 
-    if !output.status.success() {
-        return Err(AppError::Audio(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ));
+    let mut results = Vec::new();
+
+    if let Some(stdout) = child.stdout.take() {
+        let mut lines = BufReader::new(stdout).lines();
+        loop {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                lines.next_line(),
+            ).await {
+                Err(_) => break, // 30 s overall timeout — stop waiting
+                Ok(Err(_)) | Ok(Ok(None)) => break, // IO error or EOF
+                Ok(Ok(Some(line))) => {
+                    let parts: Vec<&str> = line.splitn(4, '\t').collect();
+                    if parts.len() < 4 { continue; }
+                    let id            = parts[0].to_string();
+                    let title         = parts[1].to_string();
+                    let uploader      = parts[2].to_string();
+                    let duration_secs = parts[3].parse().unwrap_or(0.0);
+                    let thumbnail_url = format!("https://img.youtube.com/vi/{id}/mqdefault.jpg");
+                    let result = YtdlpSearchResult { id, title, uploader, duration_secs, thumbnail_url };
+                    // Emit immediately so the frontend can show this result right away
+                    let _ = app_handle.emit("ytdlp:search_result", serde_json::json!({
+                        "query": &query,
+                        "result": &result,
+                    }));
+                    results.push(result);
+                }
+            }
+        }
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let results = stdout
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(4, '\t').collect();
-            if parts.len() < 4 { return None; }
-            let id = parts[0].to_string();
-            let title = parts[1].to_string();
-            let uploader = parts[2].to_string();
-            let duration_secs: f64 = parts[3].parse().unwrap_or(0.0);
-            let thumbnail_url = format!("https://img.youtube.com/vi/{id}/mqdefault.jpg");
-            Some(YtdlpSearchResult { id, title, uploader, duration_secs, thumbnail_url })
-        })
-        .collect();
-
+    let _ = child.kill().await;
     Ok(results)
 }
 
@@ -205,6 +235,7 @@ pub async fn ytdlp_download(
     artist: String,
 ) -> Result<String> {
     let bin = resolve_bin(&state.app_data_dir);
+    let ffmpeg_ok = has_ffmpeg().await;
 
     let lib_path = {
         let conn = state.db.lock().unwrap();
@@ -232,23 +263,29 @@ pub async fn ytdlp_download(
 
     emit(0.0, "downloading", None);
 
+    // Build arg list — if ffmpeg is missing, skip conversion and thumbnail embedding
+    // so the download still works (yt-dlp will save in the native format instead).
+    let mut args: Vec<&str> = vec![
+        &url,
+        "--output", &output_template,
+        "--extract-audio",
+        "--no-playlist",
+        "--no-warnings",
+        "--newline",
+    ];
+    if ffmpeg_ok {
+        args.extend(["--audio-format", "mp3", "--audio-quality", "0", "--embed-thumbnail"]);
+    }
+
     let mut child = tokio::process::Command::new(&bin)
-        .args([
-            url.as_str(),
-            "--output", &output_template,
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--audio-quality", "0",
-            "--embed-thumbnail",
-            "--add-metadata",
-            "--no-playlist",
-            "--no-warnings",
-            "--newline",
-        ])
+        .args(&args)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped()) // capture for error reporting
         .spawn()
         .map_err(|e| AppError::Io(format!("Failed to start yt-dlp: {e}")))?;
+
+    // Take stderr handle before consuming stdout so it stays open
+    let stderr_child = child.stderr.take();
 
     if let Some(stdout) = child.stdout.take() {
         let mut lines = BufReader::new(stdout).lines();
@@ -262,8 +299,26 @@ pub async fn ytdlp_download(
 
     let exit = child.wait().await.map_err(|e| AppError::Io(e.to_string()))?;
     if !exit.success() {
+        // Collect stderr so we can surface the real reason to the user
+        let mut stderr_lines: Vec<String> = Vec::new();
+        if let Some(stderr) = stderr_child {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                stderr_lines.push(line);
+            }
+        }
         emit(0.0, "error", None);
-        return Err(AppError::Audio("yt-dlp download failed".into()));
+        // Surface the last ERROR: line if present, otherwise the last line
+        let detail = stderr_lines.iter().rev()
+            .find(|l| l.contains("ERROR:"))
+            .or_else(|| stderr_lines.last())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        return Err(AppError::Audio(if detail.is_empty() {
+            "yt-dlp download failed".into()
+        } else {
+            detail
+        }));
     }
 
     emit(90.0, "processing", None);

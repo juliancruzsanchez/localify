@@ -26,6 +26,9 @@ export function SearchView() {
   const libraryTrackCount = results?.tracks.length ?? 0;
   const showYoutube =
     !!debouncedQuery && ytStatus?.available === true && libraryTrackCount < 5;
+  // Still waiting for ytdlp_check to return — show a placeholder so the section
+  // doesn't silently vanish while the binary probe runs.
+  const ytStatusLoading = !!debouncedQuery && ytStatus === null && libraryTrackCount < 5;
   const ytInitializing = !!debouncedQuery && ytStatus?.available === false && (installState.status === "installing" || installState.status === "done");
 
   const { results: ytResults, loading: ytLoading } = useYtdlpSearch(
@@ -61,6 +64,18 @@ export function SearchView() {
       {!isLoading && debouncedQuery && !hasResults && !showYoutube && !showInstallBanner && !ytInitializing && (
         <div className="px-6 text-[var(--color-text-muted)]">
           No local results found for "{debouncedQuery}".{ytStatus?.available ? " Try installing yt-dlp to search YouTube." : ""}
+        </div>
+      )}
+
+      {ytStatusLoading && (
+        <div className="px-6">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-xl font-bold text-white">From YouTube</h2>
+          </div>
+          <p className="text-[var(--color-text-muted)] text-sm flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Checking for yt-dlp…
+          </p>
         </div>
       )}
 

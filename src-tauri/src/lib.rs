@@ -38,7 +38,7 @@ use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_t
 use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
 use commands::tags::{get_track_tags, update_track_tags};
 use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device, db_load_device};
-use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_cast, get_cast_session};
+use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_cast, get_cast_session, cast_pause, cast_resume, cast_seek};
 use commands::remote_stream::{remote_stream_start, remote_stream_stop, remote_stream_status};
 use commands::discord_rpc::{discord_rpc_enable, discord_rpc_disable, discord_rpc_get_status};
 use discord_rpc::DiscordRpcHandle;
@@ -110,15 +110,31 @@ pub fn run() {
                 app.handle().clone(),
             );
 
+            let cast_state = CastState::new();
+
             app.manage(AppState {
-                db,
+                db: db.clone(),
                 player,
-                app_data_dir,
-                cast: CastState::new(),
+                app_data_dir: app_data_dir.clone(),
+                cast: cast_state.clone(),
                 plugins: plugin_registry,
                 media_control: Some(media_control),
                 watcher: Arc::new(Mutex::new(Some(lib_watcher))),
                 discord_rpc: DiscordRpcHandle::new(),
+            });
+
+            // Auto-start the LAN file server so mobile / remote clients can
+            // reach /stream/:id, /api/tracks, /api/library.json, etc. without
+            // requiring the user to click "Start" in remote-streaming settings.
+            tauri::async_runtime::spawn(async move {
+                let (port, shutdown_tx) = cast::start_file_server(db, app_data_dir).await;
+                *cast_state.server_port.lock().unwrap()     = port;
+                *cast_state.server_shutdown.lock().unwrap() = Some(shutdown_tx);
+                if let Some(ip) = cast::local_ip() {
+                    log::info!("[remote-stream] serving on http://{}:{}", ip, port);
+                } else {
+                    log::info!("[remote-stream] serving on port {}", port);
+                }
             });
 
             Ok(())
@@ -199,6 +215,9 @@ pub fn run() {
             cast_track,
             stop_cast,
             get_cast_session,
+            cast_pause,
+            cast_resume,
+            cast_seek,
             // Remote Streaming
             remote_stream_start,
             remote_stream_stop,

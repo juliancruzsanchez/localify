@@ -18,6 +18,9 @@ export interface VisualizerColors {
   hypno:     ModeColors;
   dna:       ModeColors;
   melt:      ModeColors;
+  nova:      ModeColors;
+  spiral:    ModeColors;
+  aurora:    ModeColors;
 }
 
 export const DEFAULT_COLORS: VisualizerColors = {
@@ -33,6 +36,9 @@ export const DEFAULT_COLORS: VisualizerColors = {
   hypno:     { primary: "#ff00aa", secondary: "#00ffdd" },
   dna:       { primary: "#00ff88", secondary: "#ff0088" },
   melt:      { primary: "#ff4400", secondary: "#8800ff" },
+  nova:      { primary: "#ff8800", secondary: "#ff0066" },
+  spiral:    { primary: "#00ccff", secondary: "#aa00ff" },
+  aurora:    { primary: "#00ffaa", secondary: "#0066ff" },
 };
 
 const STORAGE_KEY = "localify:visualizer-colors";

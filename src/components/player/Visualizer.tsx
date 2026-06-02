@@ -7,8 +7,8 @@ import { DEFAULT_COLORS } from "@/hooks/useVisualizerColors";
 
 const BAR_COUNT = 32;
 
-export type Mode = "bars" | "alchemy" | "plasma" | "vortex" | "radial" | "synthgrid" | "tunnel" | "ocean" | "artwork" | "warp" | "hypno" | "dna" | "melt";
-export const MODES: Mode[] = ["bars", "alchemy", "plasma", "vortex", "radial", "synthgrid", "tunnel", "ocean", "artwork", "warp", "hypno", "dna", "melt"];
+export type Mode = "bars" | "alchemy" | "plasma" | "vortex" | "radial" | "synthgrid" | "tunnel" | "ocean" | "artwork" | "warp" | "hypno" | "dna" | "melt" | "nova" | "spiral" | "aurora";
+export const MODES: Mode[] = ["bars", "alchemy", "plasma", "vortex", "radial", "synthgrid", "tunnel", "ocean", "artwork", "warp", "hypno", "dna", "melt", "nova", "spiral", "aurora"];
 export const MODE_LABELS: Record<Mode, string> = {
   bars:      "SPECTRUM",
   alchemy:   "ALCHEMY",
@@ -23,6 +23,9 @@ export const MODE_LABELS: Record<Mode, string> = {
   hypno:     "HYPNOTIZE",
   dna:       "DNA HELIX",
   melt:      "MIND MELT",
+  nova:      "NOVA BURST",
+  spiral:    "SPIRAL STORM",
+  aurora:    "AURORA",
 };
 
 // ─── color helpers ─────────────────────────────────────────────────────────────
@@ -131,6 +134,10 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
   const warpStarsRef      = useRef<WarpStar[]>([]);
   const warpRingsRef      = useRef<WarpRing[]>([]);
   const dnaPhaseRef       = useRef<number>(0);
+  // nova / spiral / aurora mode refs
+  const novaAngleRef      = useRef<number>(0);
+  const spiralAngleRef    = useRef<number>(0);
+  const auroraPhaseRef    = useRef<number>(0);
 
   useEffect(() => { colorsRef.current = colors ?? DEFAULT_COLORS; }, [colors]);
   useEffect(() => {
@@ -566,7 +573,7 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
     // ─── VORTEX ───────────────────────────────────────────────────────────────
 
     function drawVortex(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["vortex"]) {
-      ctx.fillStyle = "rgba(0,0,0,0.05)";
+      ctx.fillStyle = "rgba(0,0,0,0.04)";
       ctx.fillRect(0, 0, w, h);
 
       const cx      = w / 2;
@@ -581,6 +588,32 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
       vortexAngleRef.current += 0.010 + bass * 0.055;
       const base   = vortexAngleRef.current;
       const colorT = (Date.now() / 8000) % 1;
+      const now    = Date.now() * 0.0003;
+
+      // ─── Psychedelic aura clouds ───────────────────────────────────────────
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const auroras = [
+        { x: 0.30 + Math.sin(now * 0.61 + 0.0) * 0.20, y: 0.45 + Math.cos(now * 0.47 + 0.0) * 0.22, hueOff: 0,   bi: 2  },
+        { x: 0.70 + Math.sin(now * 0.53 + 1.2) * 0.18, y: 0.55 + Math.cos(now * 0.71 + 0.8) * 0.20, hueOff: 120, bi: 8  },
+        { x: 0.50 + Math.sin(now * 0.82 + 2.4) * 0.16, y: 0.25 + Math.cos(now * 0.63 + 1.6) * 0.18, hueOff: 240, bi: 14 },
+        { x: 0.20 + Math.sin(now * 0.44 + 3.1) * 0.14, y: 0.75 + Math.cos(now * 0.55 + 2.4) * 0.16, hueOff: 60,  bi: 20 },
+        { x: 0.78 + Math.sin(now * 0.67 + 4.5) * 0.15, y: 0.30 + Math.cos(now * 0.39 + 3.2) * 0.17, hueOff: 180, bi: 26 },
+      ];
+      for (const a of auroras) {
+        const amp = b[a.bi];
+        const bx  = a.x * w;
+        const by  = a.y * h;
+        const br  = dim * (0.35 + amp * 0.30 + bass * 0.12);
+        const hue = (primHue + a.hueOff + colorT * 60) % 360;
+        const g   = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+        g.addColorStop(0,    `hsla(${hue},100%,55%,${0.15 + amp * 0.20})`);
+        g.addColorStop(0.4,  `hsla(${hue},90%,35%,${0.06 + amp * 0.08})`);
+        g.addColorStop(1,    "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
 
       const RIBBONS = 20;
 
@@ -619,15 +652,17 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
       }
 
       if (beat) {
-        for (let i = 0; i < 14; i++) {
+        for (let i = 0; i < 20; i++) {
           const angle  = Math.random() * Math.PI * 2;
-          const startR = 15;
-          const endR   = 25 + Math.random() * dim * 0.35;
+          const startR = 10;
+          const endR   = 20 + Math.random() * dim * 0.40;
+          const burstHue = (primHue + Math.random() * 120 + colorT * 180) % 360;
           ctx.save();
-          ctx.strokeStyle = `hsla(${secHue},100%,70%,0.6)`;
-          ctx.lineWidth   = 0.8 + Math.random() * 1.2;
-          ctx.shadowColor = `hsl(${secHue},100%,65%)`;
-          ctx.shadowBlur  = 6;
+          ctx.globalCompositeOperation = "screen";
+          ctx.strokeStyle = `hsla(${burstHue},100%,65%,${0.4 + Math.random() * 0.4})`;
+          ctx.lineWidth   = 0.5 + Math.random() * 2;
+          ctx.shadowColor = `hsl(${burstHue},100%,60%)`;
+          ctx.shadowBlur  = 8 + Math.random() * 12;
           ctx.beginPath();
           ctx.moveTo(cx + Math.cos(angle) * startR, cy + Math.sin(angle) * startR);
           ctx.lineTo(cx + Math.cos(angle) * endR,   cy + Math.sin(angle) * endR);
@@ -636,15 +671,16 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
         }
       }
 
-      const ng = ctx.createRadialGradient(cx, cy, 0, cx, cy, 20 + bass * 55);
-      ng.addColorStop(0,   `hsla(${secHue},100%,85%,${0.7 + bass * 0.3})`);
-      ng.addColorStop(0.4, `hsla(${primHue},100%,55%,${0.4 + bass * 0.3})`);
+      const ng = ctx.createRadialGradient(cx, cy, 0, cx, cy, 40 + bass * 80);
+      ng.addColorStop(0,   `hsla(${secHue},100%,92%,${0.6 + bass * 0.4})`);
+      ng.addColorStop(0.25, `hsla(${primHue},100%,65%,${0.45 + bass * 0.35})`);
+      ng.addColorStop(0.55, `hsla(${secHue},90%,40%,${0.20 + bass * 0.25})`);
       ng.addColorStop(1,   "transparent");
       ctx.save();
       ctx.globalCompositeOperation = "screen";
       ctx.fillStyle = ng;
       ctx.beginPath();
-      ctx.arc(cx, cy, 20 + bass * 55, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 40 + bass * 80, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -1523,16 +1559,44 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
     // ─── DNA ──────────────────────────────────────────────────────────────────
 
     function drawDna(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["dna"]) {
-      ctx.fillStyle = "rgba(0,2,8,0.30)";
+      ctx.fillStyle = "rgba(0,2,8,0.20)";
       ctx.fillRect(0, 0, w, h);
 
       const cx      = w / 2;
       const cy      = h / 2;
+      const dim     = Math.min(w, h);
       const bass    = b[0];
       const primHue = hexToHue(c.primary);
       const secHue  = hexToHue(c.secondary);
       dnaPhaseRef.current += 0.014 + bass * 0.022;
       const phase  = dnaPhaseRef.current;
+      const now    = Date.now() * 0.00035;
+
+      // ─── Psychedelic nebula background ─────────────────────────────────────
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const nebula = [
+        { x: 0.35 + Math.sin(now * 0.52 + 0.0) * 0.22, y: 0.40 + Math.cos(now * 0.44 + 0.0) * 0.25, hueOff: 0,   bi: 3  },
+        { x: 0.65 + Math.sin(now * 0.68 + 1.8) * 0.20, y: 0.60 + Math.cos(now * 0.55 + 1.2) * 0.22, hueOff: 180, bi: 10 },
+        { x: 0.50 + Math.sin(now * 0.41 + 3.5) * 0.18, y: 0.25 + Math.cos(now * 0.72 + 2.8) * 0.20, hueOff: 90,  bi: 18 },
+        { x: 0.25 + Math.sin(now * 0.56 + 5.0) * 0.16, y: 0.70 + Math.cos(now * 0.63 + 4.0) * 0.18, hueOff: 270, bi: 6  },
+        { x: 0.75 + Math.sin(now * 0.73 + 6.2) * 0.17, y: 0.35 + Math.cos(now * 0.48 + 5.5) * 0.19, hueOff: 45,  bi: 22 },
+        { x: 0.50 + Math.sin(now * 0.37 + 7.8) * 0.30, y: 0.75 + Math.cos(now * 0.59 + 6.8) * 0.28, hueOff: 135, bi: 14 },
+      ];
+      for (const n of nebula) {
+        const amp = b[n.bi];
+        const nx  = n.x * w;
+        const ny  = n.y * h;
+        const nr  = dim * (0.28 + amp * 0.35 + bass * 0.15);
+        const hue = (secHue + n.hueOff + now * 40) % 360;
+        const g   = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+        g.addColorStop(0,    `hsla(${hue},100%,50%,${0.12 + amp * 0.22})`);
+        g.addColorStop(0.5,  `hsla(${hue},80%,30%,${0.05 + amp * 0.08})`);
+        g.addColorStop(1,    "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
       const RUNGS  = 36;
       const HELIX_H = Math.min(h * 0.88, 640);
       const HELIX_R = Math.min(w * 0.26, 160);
@@ -1687,6 +1751,372 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
       ctx.restore();
     }
 
+    // ─── NOVA ─────────────────────────────────────────────────────────────────
+
+    function drawNova(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["nova"]) {
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx       = w / 2;
+      const cy       = h / 2;
+      const dim      = Math.min(w, h);
+      const bass     = b[0];
+      const mid      = b[10];
+      const high     = b[22];
+      const beat     = beatDetect(bass);
+      const primHue  = hexToHue(c.primary);
+      const secHue   = hexToHue(c.secondary);
+      const now      = Date.now();
+      const colorT   = (now / 10000) % 1;
+
+      novaAngleRef.current += 0.006 + bass * 0.035;
+      const rot = novaAngleRef.current;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let ni = 0; ni < 4; ni++) {
+        const a  = rot * 0.4 + ni * (Math.PI / 2);
+        const d  = dim * (0.20 + b[ni * 6] * 0.18);
+        const nx = cx + Math.cos(a) * d;
+        const ny = cy + Math.sin(a) * d;
+        const r  = dim * (0.28 + b[ni * 6] * 0.22 + bass * 0.10);
+        const hue = (primHue + ni * 90 + colorT * 60) % 360;
+        const g = ctx.createRadialGradient(nx, ny, 0, nx, ny, r);
+        g.addColorStop(0,   `hsla(${hue},100%,55%,${0.10 + b[ni * 6] * 0.18})`);
+        g.addColorStop(0.5, `hsla(${hue},80%,35%,0.04)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      const RAY_COUNT = BAR_COUNT * 2;
+      const innerR = dim * 0.06;
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.lineCap = "round";
+      for (let i = 0; i < RAY_COUNT; i++) {
+        const fi    = i < BAR_COUNT ? i : BAR_COUNT - 1 - (i - BAR_COUNT);
+        const angle = (i / RAY_COUNT) * Math.PI * 2 + rot * 0.3;
+        const amp   = b[fi % BAR_COUNT];
+        const len   = innerR + amp * dim * 0.38;
+        const hue   = (primHue + (i / RAY_COUNT) * 180 + colorT * 120) % 360;
+        ctx.strokeStyle = `hsla(${hue},100%,60%,${0.08 + amp * 0.18})`;
+        ctx.lineWidth   = 6 + amp * 20;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
+        ctx.lineTo(cx + Math.cos(angle) * len,    cy + Math.sin(angle) * len);
+        ctx.stroke();
+        ctx.strokeStyle = `hsla(${hue},100%,80%,${0.35 + amp * 0.55})`;
+        ctx.lineWidth   = 0.8 + amp * 2.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
+        ctx.lineTo(cx + Math.cos(angle) * len,    cy + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let ri = 0; ri < 6; ri++) {
+        const t    = ((now * 0.00015 + ri / 6) % 1);
+        const r    = t * dim * 0.55;
+        const amp  = b[Math.floor(ri * 5)];
+        const hue  = (secHue + ri * 60 + colorT * 180) % 360;
+        const alpha = (1 - t) * (0.25 + amp * 0.40);
+        ctx.strokeStyle = `hsla(${hue},100%,65%,${alpha})`;
+        ctx.lineWidth   = (1 - t) * (2 + amp * 6);
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1, r), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      if (beat) {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        for (let i = 0; i < 32; i++) {
+          const angle  = (i / 32) * Math.PI * 2 + rot;
+          const endR   = dim * (0.12 + Math.random() * 0.38);
+          const hue    = (primHue + i * 11 + colorT * 240) % 360;
+          ctx.strokeStyle = `hsla(${hue},100%,70%,${0.5 + Math.random() * 0.4})`;
+          ctx.lineWidth   = 0.6 + Math.random() * 2.5;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
+          ctx.lineTo(cx + Math.cos(angle) * endR,   cy + Math.sin(angle) * endR);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      const PETALS = 8;
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let pi = 0; pi < PETALS; pi++) {
+        const pAngle = (pi / PETALS) * Math.PI * 2 + rot * 1.4;
+        const pAmp   = b[Math.floor((pi / PETALS) * BAR_COUNT)];
+        const pLen   = dim * (0.08 + pAmp * 0.18 + mid * 0.10);
+        const pHue   = (secHue + pi * (360 / PETALS) + colorT * 60) % 360;
+        ctx.strokeStyle = `hsla(${pHue},100%,65%,${0.20 + pAmp * 0.45})`;
+        ctx.lineWidth   = 2 + pAmp * 8;
+        ctx.lineCap     = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        const cp1x = cx + Math.cos(pAngle - 0.5) * pLen * 0.6;
+        const cp1y = cy + Math.sin(pAngle - 0.5) * pLen * 0.6;
+        const cp2x = cx + Math.cos(pAngle + 0.5) * pLen * 0.6;
+        const cp2y = cy + Math.sin(pAngle + 0.5) * pLen * 0.6;
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, cx + Math.cos(pAngle) * pLen, cy + Math.sin(pAngle) * pLen);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      const coreR = dim * (0.04 + bass * 0.08 + high * 0.04);
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+      cg.addColorStop(0,    `rgba(255,255,255,${0.7 + bass * 0.3})`);
+      cg.addColorStop(0.35, `hsla(${primHue},100%,70%,${0.4 + bass * 0.4})`);
+      cg.addColorStop(1,    "transparent");
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ─── SPIRAL ───────────────────────────────────────────────────────────────
+
+    function drawSpiral(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["spiral"]) {
+      ctx.fillStyle = "rgba(0,0,6,0.14)";
+      ctx.fillRect(0, 0, w, h);
+
+      const cx      = w / 2;
+      const cy      = h / 2;
+      const dim     = Math.min(w, h);
+      const bass    = b[0];
+      const mid     = b[10];
+      const beat    = beatDetect(bass);
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const colorT  = (Date.now() / 9000) % 1;
+
+      spiralAngleRef.current += 0.008 + bass * 0.045;
+      const rot = spiralAngleRef.current;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const t2 = Date.now() * 0.00028;
+      for (let ai = 0; ai < 3; ai++) {
+        const a   = t2 * (0.5 + ai * 0.3) + ai * 2.1;
+        const ax  = cx + Math.cos(a) * dim * 0.25;
+        const ay  = cy + Math.sin(a) * dim * 0.22;
+        const ar  = dim * (0.32 + b[ai * 8] * 0.28 + bass * 0.10);
+        const hue = (primHue + ai * 120 + colorT * 60) % 360;
+        const g   = ctx.createRadialGradient(ax, ay, 0, ax, ay, ar);
+        g.addColorStop(0,   `hsla(${hue},100%,50%,${0.12 + b[ai * 8] * 0.16})`);
+        g.addColorStop(0.5, `hsla(${hue},80%,30%,0.04)`);
+        g.addColorStop(1,   "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+
+      const ARMS  = 3;
+      const TURNS = 3.5;
+      const STEPS = 180;
+      const maxR  = dim * 0.46;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.lineCap = "round";
+
+      for (let arm = 0; arm < ARMS; arm++) {
+        const armOffset = (arm / ARMS) * Math.PI * 2;
+        ctx.lineWidth = 12 + bass * 28;
+        ctx.beginPath();
+        for (let si = 0; si <= STEPS; si++) {
+          const t     = si / STEPS;
+          const angle = t * TURNS * Math.PI * 2 + rot + armOffset;
+          const r     = t * maxR * (1 + b[Math.floor(t * (BAR_COUNT - 1))] * 0.30);
+          const hue   = (primHue + arm * (360 / ARMS) + t * 120 + colorT * 60) % 360;
+          const alpha = 0.04 + t * 0.10 + b[Math.floor(t * (BAR_COUNT - 1))] * 0.08;
+          ctx.strokeStyle = `hsla(${hue},100%,55%,${alpha})`;
+          const px = cx + Math.cos(angle) * r;
+          const py = cy + Math.sin(angle) * r;
+          if (si === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let si = 0; si <= STEPS; si++) {
+          const t     = si / STEPS;
+          const angle = t * TURNS * Math.PI * 2 + rot + armOffset;
+          const r     = t * maxR * (1 + b[Math.floor(t * (BAR_COUNT - 1))] * 0.30);
+          const hue   = (primHue + arm * (360 / ARMS) + t * 120 + colorT * 60) % 360;
+          const alpha = 0.25 + t * 0.55 + b[Math.floor(t * (BAR_COUNT - 1))] * 0.20;
+          ctx.strokeStyle = `hsla(${hue},100%,75%,${alpha})`;
+          const px = cx + Math.cos(angle) * r;
+          const py = cy + Math.sin(angle) * r;
+          if (si === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const t     = i / BAR_COUNT;
+        const arm   = i % ARMS;
+        const angle = t * TURNS * Math.PI * 2 + rot + (arm / ARMS) * Math.PI * 2;
+        const r     = t * maxR * (1 + b[i] * 0.30);
+        const dotR  = 1.5 + b[i] * 9;
+        const hue   = (secHue + i * (360 / BAR_COUNT) + colorT * 80) % 360;
+        const px    = cx + Math.cos(angle) * r;
+        const py    = cy + Math.sin(angle) * r;
+        const g     = ctx.createRadialGradient(px, py, 0, px, py, dotR);
+        g.addColorStop(0, `hsla(${hue},100%,88%,${0.45 + b[i] * 0.50})`);
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      if (beat) {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        for (let i = 0; i < 24; i++) {
+          const angle  = (i / 24) * Math.PI * 2 + rot;
+          const endR   = 20 + Math.random() * dim * 0.35;
+          const hue    = (primHue + i * 15 + colorT * 180) % 360;
+          ctx.strokeStyle = `hsla(${hue},100%,65%,${0.45 + Math.random() * 0.45})`;
+          ctx.lineWidth   = 0.5 + Math.random() * 2;
+          ctx.lineCap     = "round";
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(angle) * endR, cy + Math.sin(angle) * endR);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      const ringR = dim * 0.06 * (1 + mid * 0.8);
+      const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR);
+      rg.addColorStop(0,   `hsla(${secHue},100%,90%,${0.55 + bass * 0.45})`);
+      rg.addColorStop(0.6, `hsla(${primHue},100%,65%,${0.30 + bass * 0.35})`);
+      rg.addColorStop(1,   "transparent");
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ─── AURORA ───────────────────────────────────────────────────────────────
+
+    function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, b: number[], c: VisualizerColors["aurora"]) {
+      ctx.fillStyle = "rgba(0,2,12,0.18)";
+      ctx.fillRect(0, 0, w, h);
+
+      const bass    = b[0];
+      const primHue = hexToHue(c.primary);
+      const secHue  = hexToHue(c.secondary);
+      const beat    = beatDetect(bass);
+      const now     = Date.now();
+
+      auroraPhaseRef.current = (auroraPhaseRef.current + 0.003 + bass * 0.006) % (Math.PI * 2);
+      const phase = auroraPhaseRef.current;
+
+      ctx.save();
+      for (let si = 0; si < 80; si++) {
+        const sx      = (si * 137.5 + 7) % w;
+        const sy      = (si * 61.8  + 3) % (h * 0.75);
+        const twinkle = 0.3 + 0.4 * Math.sin(now * 0.0007 * (0.5 + (si % 7) * 0.15) + si);
+        ctx.globalAlpha = twinkle * 0.7;
+        ctx.fillStyle   = `hsl(${(primHue + si * 5) % 360},50%,90%)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 0.5 + (si % 3) * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      const BANDS = 9;
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+
+      for (let bi = 0; bi < BANDS; bi++) {
+        const t       = bi / BANDS;
+        const freqIdx = Math.floor(t * (BAR_COUNT - 1));
+        const amp     = b[freqIdx];
+        const baseY   = h * (0.08 + t * 0.62);
+        const drift   = phase * (0.7 + t * 0.6) + bi * 1.3;
+        const hue     = (primHue + t * 180 + (bi % 2 === 0 ? 0 : (secHue - primHue + 360) % 360) + now * 0.003) % 360;
+        const bandH   = h * (0.04 + amp * 0.18 + bass * 0.06);
+        const alpha   = 0.06 + amp * 0.22 + (beat ? 0.08 : 0);
+
+        const bodyGrad = ctx.createLinearGradient(0, baseY - bandH, 0, baseY + bandH);
+        bodyGrad.addColorStop(0,   "transparent");
+        bodyGrad.addColorStop(0.3, `hsla(${hue},100%,55%,${alpha * 0.5})`);
+        bodyGrad.addColorStop(0.5, `hsla(${hue},100%,60%,${alpha})`);
+        bodyGrad.addColorStop(0.7, `hsla(${hue},100%,55%,${alpha * 0.5})`);
+        bodyGrad.addColorStop(1,   "transparent");
+        ctx.fillStyle = bodyGrad;
+        ctx.fillRect(0, baseY - bandH, w, bandH * 2);
+
+        ctx.strokeStyle = `hsla(${hue},100%,70%,${0.12 + amp * 0.35})`;
+        ctx.lineWidth   = 0.8 + amp * 3;
+        ctx.beginPath();
+        for (let xi = 0; xi <= 120; xi++) {
+          const xt  = xi / 120;
+          const sx  = xt * w;
+          const wave =
+            Math.sin(xt * Math.PI * 4 + drift)       * bandH * 0.55 +
+            Math.sin(xt * Math.PI * 7 - drift * 0.7) * bandH * 0.25 +
+            Math.sin(xt * Math.PI * 2 + drift * 0.3) * bandH * 0.20;
+          const sy = baseY + wave;
+          if (xi === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+
+        const RAY_COUNT = 12 + Math.floor(amp * 8);
+        for (let ri = 0; ri < RAY_COUNT; ri++) {
+          const rx       = ((ri / RAY_COUNT) * w + now * 0.005 * (bi % 2 === 0 ? 1 : -0.7)) % w;
+          const rayH     = bandH * (0.5 + amp * 1.5);
+          const rayAlpha = 0.03 + amp * 0.14;
+          const rayGrad  = ctx.createLinearGradient(0, baseY, 0, baseY - rayH);
+          rayGrad.addColorStop(0,   `hsla(${hue},100%,65%,${rayAlpha})`);
+          rayGrad.addColorStop(0.6, `hsla(${(hue + 30) % 360},100%,75%,${rayAlpha * 0.4})`);
+          rayGrad.addColorStop(1,   "transparent");
+          ctx.fillStyle = rayGrad;
+          ctx.fillRect(rx - 1, baseY - rayH, 2.5, rayH);
+        }
+      }
+      ctx.restore();
+
+      const horizonY = h * 0.70;
+      const hg = ctx.createLinearGradient(0, horizonY - 30, 0, horizonY + 60);
+      hg.addColorStop(0,   "transparent");
+      hg.addColorStop(0.4, `hsla(${primHue},80%,50%,${0.04 + bass * 0.10})`);
+      hg.addColorStop(1,   "transparent");
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillStyle = hg;
+      ctx.fillRect(0, horizonY - 30, w, 90);
+      ctx.restore();
+
+      if (beat) {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        const fg = ctx.createLinearGradient(0, 0, 0, h * 0.7);
+        fg.addColorStop(0,   `hsla(${(primHue + 60) % 360},100%,70%,0.08)`);
+        fg.addColorStop(0.5, `hsla(${primHue},100%,60%,0.04)`);
+        fg.addColorStop(1,   "transparent");
+        ctx.fillStyle = fg;
+        ctx.fillRect(0, 0, w, h * 0.7);
+        ctx.restore();
+      }
+    }
+
     // ─── main loop ────────────────────────────────────────────────────────────
 
     const draw = () => {
@@ -1718,6 +2148,9 @@ export function Visualizer({ className, style, colors, artworkHash, mode }: Prop
         case "hypno":     drawHypno(ctx, w, h, displayed, c.hypno);        break;
         case "dna":       drawDna(ctx, w, h, displayed, c.dna);            break;
         case "melt":      drawMelt(ctx, w, h, displayed, c.melt);          break;
+        case "nova":      drawNova(ctx, w, h, displayed, c.nova);          break;
+        case "spiral":    drawSpiral(ctx, w, h, displayed, c.spiral);      break;
+        case "aurora":    drawAurora(ctx, w, h, displayed, c.aurora);      break;
       }
 
       rafRef.current = requestAnimationFrame(draw);

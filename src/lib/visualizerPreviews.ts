@@ -297,5 +297,127 @@ export function renderPreview(mode: Mode, ctx: CanvasRenderingContext2D, w: numb
         ctx.fillRect(0, 0, w, h);
       }
       break;
+
+    case "nova":
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+      // Radial rays
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < 64; i++) {
+        const angle = (i / 64) * Math.PI * 2;
+        const amp   = 0.5 + Math.sin(i * 0.7) * 0.25;
+        const len   = dim * 0.1 + amp * dim * 0.32;
+        const hue   = (200 + (i / 64) * 180) % 360;
+        ctx.strokeStyle = `hsla(${hue},100%,65%,${0.25 + amp * 0.40})`;
+        ctx.lineWidth   = 0.8 + amp * 2;
+        ctx.lineCap     = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * dim * 0.08, cy + Math.sin(angle) * dim * 0.08);
+        ctx.lineTo(cx + Math.cos(angle) * len,        cy + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+      // Shockwave rings
+      for (let ri = 0; ri < 4; ri++) {
+        const r   = dim * (0.12 + ri * 0.09);
+        const hue = (200 + ri * 50) % 360;
+        ctx.strokeStyle = `hsla(${hue},100%,60%,${0.35 - ri * 0.06})`;
+        ctx.lineWidth   = 1.5 - ri * 0.3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // Core glow
+      const novaCG = ctx.createRadialGradient(cx, cy, 0, cx, cy, dim * 0.08);
+      novaCG.addColorStop(0, "rgba(255,255,255,0.9)");
+      novaCG.addColorStop(0.4, "hsla(30,100%,65%,0.5)");
+      novaCG.addColorStop(1, "transparent");
+      ctx.fillStyle = novaCG;
+      ctx.beginPath();
+      ctx.arc(cx, cy, dim * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case "spiral":
+      ctx.fillStyle = "#000006";
+      ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.lineCap = "round";
+      for (let arm = 0; arm < 3; arm++) {
+        const armOff = (arm / 3) * Math.PI * 2;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let si = 0; si <= 160; si++) {
+          const t     = si / 160;
+          const angle = t * 3.5 * Math.PI * 2 + armOff;
+          const r     = t * dim * 0.42 * (1 + mock(si) * 0.25);
+          const hue   = (200 + arm * 120 + t * 100) % 360;
+          const alpha = 0.20 + t * 0.60;
+          ctx.strokeStyle = `hsla(${hue},100%,70%,${alpha})`;
+          const px = cx + Math.cos(angle) * r;
+          const py = cy + Math.sin(angle) * r;
+          if (si === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      // dots along spiral
+      for (let i = 0; i < 32; i++) {
+        const t     = i / 32;
+        const arm   = i % 3;
+        const angle = t * 3.5 * Math.PI * 2 + (arm / 3) * Math.PI * 2;
+        const r     = t * dim * 0.42;
+        const hue   = (300 + i * 11) % 360;
+        const g     = ctx.createRadialGradient(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 0, cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 3 + mock(i) * 5);
+        g.addColorStop(0, `hsla(${hue},100%,90%,0.8)`);
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r, 3 + mock(i) * 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      break;
+
+    case "aurora":
+      ctx.fillStyle = "#00020c";
+      ctx.fillRect(0, 0, w, h);
+      // stars
+      for (let si = 0; si < 50; si++) {
+        ctx.globalAlpha = 0.4 + 0.3 * Math.sin(si * 1.3);
+        ctx.fillStyle = "#ccddff";
+        ctx.beginPath();
+        ctx.arc((si * 137.5 + 7) % w, (si * 61.8 + 3) % (h * 0.7), 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      for (let bi = 0; bi < 7; bi++) {
+        const t     = bi / 7;
+        const baseY = h * (0.10 + t * 0.55);
+        const amp   = 0.5 + Math.sin(bi * 0.9) * 0.3;
+        const bandH = h * (0.04 + amp * 0.10);
+        const hue   = (120 + t * 180) % 360;
+        const bg    = ctx.createLinearGradient(0, baseY - bandH, 0, baseY + bandH);
+        bg.addColorStop(0,   "transparent");
+        bg.addColorStop(0.5, `hsla(${hue},100%,55%,${0.12 + amp * 0.18})`);
+        bg.addColorStop(1,   "transparent");
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, baseY - bandH, w, bandH * 2);
+        ctx.strokeStyle = `hsla(${hue},100%,70%,${0.18 + amp * 0.30})`;
+        ctx.lineWidth   = 0.8 + amp * 2;
+        ctx.beginPath();
+        for (let xi = 0; xi <= 80; xi++) {
+          const xt  = xi / 80;
+          const sx  = xt * w;
+          const sy  = baseY + Math.sin(xt * Math.PI * 5 + bi * 1.1) * bandH * 0.6;
+          if (xi === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      break;
   }
 }

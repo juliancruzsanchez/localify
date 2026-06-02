@@ -13,7 +13,10 @@ import { SettingsView } from "@/views/SettingsView";
 import { useUiStore } from "@/store/uiStore";
 import { usePlayerStore } from "@/store/playerStore";
 import { useLastFmScrobbling } from "@/hooks/useLastFmScrobbling";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useAddTrackToPlaylist } from "@/queries/playlists";
+import { CreatePlaylistDialog } from "@/components/playlists/CreatePlaylistDialog";
+import { KeyboardShortcutsModal } from "@/components/modals/KeyboardShortcutsModal";
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from "@/lib/constants";
 import { setPluginNavigate } from "@/plugins/navigation";
 import type { PlayerState, Track } from "@/types";
@@ -21,8 +24,9 @@ import type { PlayerState, Track } from "@/types";
 const QUEUE_PANEL_WIDTH = 280;
 
 export default function App() {
-  const { sidebarCollapsed, queueOpen, settingsOpen, setSettingsOpen } = useUiStore();
+  const { sidebarCollapsed, queueOpen, settingsOpen, setSettingsOpen, createPlaylistOpen, setCreatePlaylistOpen } = useUiStore();
   const { playNext, setPosition, setDuration, setIsPlaying } = usePlayerStore();
+  useKeyboardShortcuts();
   const [activeTrack, setActiveTrack] = useState<Track | null>(null);
   const { mutate: addTrackToPlaylist } = useAddTrackToPlaylist();
   const navigate = useNavigate();
@@ -139,6 +143,15 @@ export default function App() {
           {activeTrack ? <DragOverlayContent track={activeTrack} /> : null}
         </DragOverlay>
       </div>
+
+      {/* Keyboard shortcuts modal */}
+      <KeyboardShortcutsModal />
+
+      {/* Controlled create playlist dialog (opened via ⌘N) */}
+      <CreatePlaylistDialog
+        open={createPlaylistOpen}
+        onOpenChange={setCreatePlaylistOpen}
+      />
 
       {/* Settings modal */}
       {settingsOpen && (

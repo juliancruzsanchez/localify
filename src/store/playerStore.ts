@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, RepeatMode } from "@/types";
 
+interface CastSessionInfo {
+  deviceName: string;
+  deviceHost: string;
+}
+
 interface PlayerStore {
   currentTrack: Track | null;
   queue: Track[];
@@ -14,6 +19,8 @@ interface PlayerStore {
   repeatMode: RepeatMode;
   /** Timestamp (Date.now()) of last playTrack call — used to suppress poll flicker. */
   _lastPlayStartedAt: number;
+  /** Non-null when audio is being routed to a Chromecast. */
+  castSession: CastSessionInfo | null;
 
   playTrack: (track: Track, queue?: Track[], index?: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
@@ -26,6 +33,7 @@ interface PlayerStore {
   setPosition: (ms: number) => void;
   setDuration: (ms: number) => void;
   setIsPlaying: (playing: boolean) => void;
+  setCastSession: (session: CastSessionInfo | null) => void;
   /** Inserts track immediately after the current queue position. */
   playAfterCurrent: (track: Track) => void;
   /** Appends track to the end of the current queue. */
@@ -43,32 +51,51 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   shuffleEnabled: false,
   repeatMode: "none",
   _lastPlayStartedAt: 0,
+  castSession: null,
 
   playTrack: async (track, queue = [], index = 0) => {
+    const { castSession } = get();
     try {
-      await invoke("play_track", { trackId: track.id, startMs: null });
-      set({
-        currentTrack: track,
-        queue: queue.length > 0 ? queue : [track],
-        queueIndex: index,
-        isPlaying: true,
-        positionMs: 0,
-        durationMs: Math.round(track.duration_secs * 1000),
-        // Record when this play started so the polling loop can suppress
-        // position/duration/is_playing sync for 600 ms while the Rust audio
-        // loop bootstraps the new track (the atomic may still hold the
-        // previous track's position until the Play command is processed).
-        _lastPlayStartedAt: Date.now(),
-      });
+      if (castSession) {
+        await invoke("cast_track", { trackId: track.id, deviceName: castSession.deviceName, positionMs: 0 });
+        set({
+          currentTrack: track,
+          queue: queue.length > 0 ? queue : [track],
+          queueIndex: index,
+          isPlaying: true,
+          positionMs: 0,
+          durationMs: Math.round(track.duration_secs * 1000),
+          _lastPlayStartedAt: Date.now(),
+        });
+      } else {
+        await invoke("play_track", { trackId: track.id, startMs: null });
+        set({
+          currentTrack: track,
+          queue: queue.length > 0 ? queue : [track],
+          queueIndex: index,
+          isPlaying: true,
+          positionMs: 0,
+          durationMs: Math.round(track.duration_secs * 1000),
+          _lastPlayStartedAt: Date.now(),
+        });
+      }
     } catch (e) {
       console.error("play_track failed:", e);
     }
   },
 
   togglePlayPause: async () => {
-    const { isPlaying } = get();
+    const { isPlaying, castSession } = get();
     try {
-      if (isPlaying) {
+      if (castSession) {
+        if (isPlaying) {
+          await invoke("cast_pause");
+          set({ isPlaying: false });
+        } else {
+          await invoke("cast_resume");
+          set({ isPlaying: true });
+        }
+      } else if (isPlaying) {
         await invoke("pause");
         set({ isPlaying: false });
       } else {
@@ -118,8 +145,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   seek: async (positionMs) => {
+    const { castSession } = get();
     try {
-      await invoke("seek", { positionMs: Math.round(positionMs) });
+      if (castSession) {
+        await invoke("cast_seek", { positionMs: Math.round(positionMs) });
+      } else {
+        await invoke("seek", { positionMs: Math.round(positionMs) });
+      }
       set({ positionMs: Math.round(positionMs) });
     } catch (e) {
       console.error("seek failed:", e);
@@ -150,7 +182,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   setPosition: (ms) => set({ positionMs: ms }),
   setDuration: (ms) => set({ durationMs: ms }),
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setIsPlaying: (playing) => {
+    // Don't override isPlaying from local player events when casting —
+    // the local audio engine is paused; the Chromecast owns playback state.
+    if (get().castSession) return;
+    set({ isPlaying: playing });
+  },
+  setCastSession: (session) => set({ castSession: session }),
 
   playAfterCurrent: (track) => {
     set((s) => {

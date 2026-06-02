@@ -25,6 +25,9 @@ const COLOR_DEFS: Record<Mode, Array<{ key: string; label: string }>> = {
   hypno:     [{ key: "primary",   label: "Ring A" },       { key: "secondary", label: "Ring B" }],
   dna:       [{ key: "primary",   label: "Strand A" },     { key: "secondary", label: "Strand B" }],
   melt:      [{ key: "primary",   label: "Blobs" },        { key: "secondary", label: "Accent" }],
+  nova:      [{ key: "primary",   label: "Rays" },         { key: "secondary", label: "Rings" }],
+  spiral:    [{ key: "primary",   label: "Arms" },         { key: "secondary", label: "Dots" }],
+  aurora:    [{ key: "primary",   label: "Curtains" },     { key: "secondary", label: "Accent" }],
 };
 
 export function VisualizerColorPanel({ colors, activeMode, onModeSelect, updateColor, resetColors, onClose }: Props) {

@@ -112,7 +112,7 @@ export default function AlbumDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { baseUrl } = useServer();
   const router = useRouter();
-  const { data: album, isLoading, error } = useAlbum(id ?? '');
+  const { data: album, isLoading, error, fetchStatus } = useAlbum(id ?? '');
   const { playTrack, currentTrack, isPlaying, togglePlayPause } = usePlayerStore();
 
   const firstTrackArtwork = useMemo(
@@ -120,7 +120,9 @@ export default function AlbumDetailScreen() {
     [album, baseUrl]
   );
 
-  if (isLoading) {
+  // While the query is disabled (no baseUrl yet, no id yet) or actively
+  // fetching, show the loader instead of the error fallback.
+  if (isLoading || fetchStatus === 'fetching' || (!album && !error)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={Colors.accent} size="large" />

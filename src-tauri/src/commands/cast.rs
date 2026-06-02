@@ -33,11 +33,13 @@ pub async fn get_cast_devices(state: State<'_, AppState>) -> Result<Vec<CastDevi
 ///
 /// 1. Starts a local HTTP file server (if not already running).
 /// 2. Connects to the Cast device and loads the media URL.
+/// 3. `position_ms` — start playback at this offset (0 = from beginning).
 #[tauri::command]
 pub async fn cast_track(
     state:       State<'_, AppState>,
     track_id:    String,
     device_name: String,
+    position_ms: Option<f64>,
 ) -> Result<()> {
     // Find the device in the cache
     let device = {
@@ -70,15 +72,16 @@ pub async fn cast_track(
     let lan_ip = cast::local_ip()
         .ok_or_else(|| AppError::Audio("Could not determine local IP".to_string()))?;
     let media_url = format!("http://{}:{}/track/{}", lan_ip, port, track_id);
+    let start_time_secs = position_ms.unwrap_or(0.0) / 1000.0;
 
-    eprintln!("[cast] → {device_name} ({}) : {media_url}", device.host);
+    eprintln!("[cast] → {device_name} ({}) : {media_url} @ {start_time_secs:.1}s", device.host);
 
     let host       = device.host.clone();
     let cast_port  = device.port;
     let url_clone  = media_url.clone();
 
     tokio::task::spawn_blocking(move || {
-        cast::start_cast_session(&host, cast_port, &url_clone)
+        cast::start_cast_session(&host, cast_port, &url_clone, start_time_secs)
     })
     .await
     .map_err(|e| AppError::Audio(e.to_string()))?
@@ -93,6 +96,52 @@ pub async fn cast_track(
     });
 
     Ok(())
+}
+
+/// Pause media playback on the active cast session.
+#[tauri::command]
+pub async fn cast_pause(state: State<'_, AppState>) -> Result<()> {
+    let (host, port) = cast_host_port(&state)?;
+    tokio::task::spawn_blocking(move || cast::cast_pause_media(&host, port))
+        .await
+        .map_err(|e| AppError::Audio(e.to_string()))?
+        .map_err(AppError::Audio)
+}
+
+/// Resume media playback on the active cast session.
+#[tauri::command]
+pub async fn cast_resume(state: State<'_, AppState>) -> Result<()> {
+    let (host, port) = cast_host_port(&state)?;
+    tokio::task::spawn_blocking(move || cast::cast_resume_media(&host, port))
+        .await
+        .map_err(|e| AppError::Audio(e.to_string()))?
+        .map_err(AppError::Audio)
+}
+
+/// Seek to `position_ms` on the active cast session.
+#[tauri::command]
+pub async fn cast_seek(state: State<'_, AppState>, position_ms: f64) -> Result<()> {
+    let (host, port) = cast_host_port(&state)?;
+    let secs = position_ms / 1000.0;
+    tokio::task::spawn_blocking(move || cast::cast_seek_media(&host, port, secs))
+        .await
+        .map_err(|e| AppError::Audio(e.to_string()))?
+        .map_err(AppError::Audio)
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+fn cast_host_port(state: &AppState) -> std::result::Result<(String, u16), AppError> {
+    let session = state.cast.session.lock().unwrap().clone();
+    let s = session.ok_or_else(|| AppError::Audio("No active cast session".to_string()))?;
+    let port = {
+        let devices = state.cast.devices.lock().unwrap();
+        devices.iter()
+            .find(|d| d.host == s.device_host)
+            .map(|d| d.port)
+            .unwrap_or(8009)
+    };
+    Ok((s.device_host, port))
 }
 
 /// Stop casting and tear down the session.

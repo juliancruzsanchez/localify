@@ -4,11 +4,15 @@ import { X } from "lucide-react";
 import { useCreatePlaylist } from "@/queries/playlists";
 
 interface CreatePlaylistDialogProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function CreatePlaylistDialog({ children }: CreatePlaylistDialogProps) {
-  const [open, setOpen] = useState(false);
+export function CreatePlaylistDialog({ children, open: controlledOpen, onOpenChange }: CreatePlaylistDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [name, setName] = useState("");
   const createPlaylist = useCreatePlaylist();
 
@@ -22,7 +26,7 @@ export function CreatePlaylistDialog({ children }: CreatePlaylistDialogProps) {
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>{children}</Dialog.Trigger>
+      {children && <Dialog.Trigger asChild>{children}</Dialog.Trigger>}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 z-50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-[var(--color-surface-elevated)] rounded-xl p-6 w-96 shadow-2xl">

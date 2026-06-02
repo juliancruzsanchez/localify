@@ -257,9 +257,15 @@ export function TopBar() {
   function handleMaximize() { win.toggleMaximize(); }
   function handleClose()    { win.close(); }
 
+  function handleMouseDown(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, a")) return;
+    win.startDragging();
+  }
+
   return (
     <header
-      data-tauri-drag-region
+      onMouseDown={handleMouseDown}
       style={{
         gridArea: "topbar",
         height: "var(--topbar-height)",
@@ -270,7 +276,10 @@ export function TopBar() {
         padding: "0 16px 0 12px",
         gap: "8px",
         borderRadius: "12px 12px 0 0",
-      }}
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        cursor: "grab",
+      } as React.CSSProperties}
     >
       {/* Logo + window controls + name */}
       <div className="flex items-center gap-2 flex-shrink-0">

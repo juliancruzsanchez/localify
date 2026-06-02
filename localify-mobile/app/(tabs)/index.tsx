@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,18 +12,27 @@ import {
   View,
 } from 'react-native';
 import { AlbumCard } from '../../components/AlbumCard';
+import { ArtistCard } from '../../components/ArtistCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
-import { artworkUrl, useLibrarySnapshot, useRecent } from '../../hooks/useLibrary';
+import {
+  artworkUrl,
+  useLibrarySnapshot,
+  useRecent,
+  type AlbumSummary,
+  type ArtistSummary,
+  type TrackSummary,
+} from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 import { usePlayerStore } from '../../store/playerStore';
 import { useStatsStore } from '../../store/statsStore';
 
-type FilterId = 'all' | 'music';
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'music', label: 'Music' },
-];
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 function useStyles() {
   const Colors = useColors();
@@ -33,48 +42,32 @@ function useStyles() {
       backgroundColor: Colors.background,
     },
     content: {
-      paddingTop: 0,
+      paddingBottom: Spacing.xxl,
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingTop: 56,
       paddingHorizontal: Spacing.md,
-      paddingBottom: Spacing.sm,
-      gap: Spacing.sm,
+      paddingBottom: Spacing.md,
+      gap: Spacing.md,
+    },
+    greeting: {
+      flex: 1,
+      color: Colors.text,
+      fontSize: FontSize.xxl,
+      fontWeight: '800',
     },
     avatarBtn: {
       flexShrink: 0,
     },
     avatar: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
       backgroundColor: Colors.surfaceElevated,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    filterRow: {
-      flexDirection: 'row',
-      gap: Spacing.sm,
-      alignItems: 'center',
-    },
-    filterChip: {
-      paddingHorizontal: 14,
-      paddingVertical: 6,
-      borderRadius: Radius.full,
-      backgroundColor: Colors.surfaceElevated,
-    },
-    filterChipActive: {
-      backgroundColor: Colors.accent,
-    },
-    filterChipText: {
-      color: Colors.text,
-      fontSize: FontSize.sm,
-      fontWeight: '600',
-    },
-    filterChipTextActive: {
-      color: Colors.background,
     },
     loader: {
       marginVertical: Spacing.xl,
@@ -84,7 +77,7 @@ function useStyles() {
       flexWrap: 'wrap',
       paddingHorizontal: Spacing.md,
       gap: Spacing.sm,
-      marginTop: Spacing.sm,
+      marginTop: Spacing.xs,
       marginBottom: Spacing.md,
     },
     recentCard: {
@@ -99,6 +92,7 @@ function useStyles() {
       width: 56,
       height: 56,
       flexShrink: 0,
+      backgroundColor: Colors.surface,
     },
     recentTitle: {
       flex: 1,
@@ -110,65 +104,93 @@ function useStyles() {
     horizontalList: {
       paddingHorizontal: Spacing.md,
       paddingBottom: Spacing.sm,
-      gap: Spacing.md,
     },
-    topTrackRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
+    emptyRecent: {
       paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
-      gap: Spacing.md,
-    },
-    topTrackArtwork: {
-      width: 48,
-      height: 48,
-      borderRadius: Radius.sm,
-      backgroundColor: Colors.surfaceElevated,
-      flexShrink: 0,
-      overflow: 'hidden',
-    },
-    topTrackInfo: {
-      flex: 1,
-      gap: 2,
-    },
-    topTrackTitle: {
-      color: Colors.text,
-      fontSize: FontSize.md,
-      fontWeight: '500',
-    },
-    topTrackArtist: {
+      paddingVertical: Spacing.md,
       color: Colors.textMuted,
       fontSize: FontSize.sm,
     },
-    topTrackCount: {
-      color: Colors.accent,
-      fontSize: FontSize.sm,
-      fontWeight: '700',
-    },
   }), [Colors]);
 }
+
+// ─── Most-played card (uses local stats history, looks like desktop card) ─────
+
+function MostPlayedCard({
+  trackId,
+  title,
+  artist,
+  artworkUri,
+  onPress,
+}: {
+  trackId: string;
+  title: string;
+  artist: string;
+  artworkUri: string | null;
+  onPress: () => void;
+}) {
+  // Reuse AlbumCard layout — square art + title + subtitle
+  return (
+    <AlbumCard
+      artworkUri={artworkUri}
+      title={title}
+      subtitle={artist}
+      onPress={onPress}
+      key={trackId}
+    />
+  );
+}
+
+// ─── Home screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const styles = useStyles();
   const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
-  const [filter, setFilter] = useState<FilterId>('all');
-  const { data: recentTracks, isLoading: recentLoading } = useRecent(8);
+  const { data: recentTracks, isLoading: recentLoading } = useRecent(6);
   const { data: snapshot, isLoading: snapshotLoading } = useLibrarySnapshot();
   const playTrack = usePlayerStore((s) => s.playTrack);
   const statsHistory = useStatsStore((s) => s.history);
 
-  const jumpBackIn = useMemo(() => snapshot?.albums?.slice(0, 12) ?? [], [snapshot]);
+  const tracksById = useMemo(() => {
+    const m = new Map<string, TrackSummary>();
+    for (const t of snapshot?.tracks ?? []) m.set(t.id, t);
+    return m;
+  }, [snapshot]);
 
-  const statsTop = useMemo(() => {
-    const counts: Record<string, { id: string; title: string; artist: string; count: number; ms: number }> = {};
-    for (const e of statsHistory) {
-      if (!counts[e.trackId]) counts[e.trackId] = { id: e.trackId, title: e.title, artist: e.artist, count: 0, ms: 0 };
-      counts[e.trackId].count++;
-      counts[e.trackId].ms += e.listenedMs;
+  // Map each artist_id to one of their album_ids for circle artwork.
+  const artistRepAlbum = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of snapshot?.albums ?? []) {
+      if (!m.has(a.artist_id)) m.set(a.artist_id, a.id);
     }
-    return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 4);
+    return m;
+  }, [snapshot]);
+
+  const topAlbums: AlbumSummary[] = useMemo(() => {
+    if (!snapshot) return [];
+    return [...snapshot.albums]
+      .sort((a, b) => b.track_count - a.track_count)
+      .slice(0, 8);
+  }, [snapshot]);
+
+  const topArtists: ArtistSummary[] = useMemo(() => {
+    if (!snapshot) return [];
+    return [...snapshot.artists]
+      .sort((a, b) => b.track_count - a.track_count)
+      .slice(0, 8);
+  }, [snapshot]);
+
+  const mostPlayed = useMemo(() => {
+    const counts: Record<string, { id: string; title: string; artist: string; count: number }> = {};
+    for (const e of statsHistory) {
+      if (!counts[e.trackId]) counts[e.trackId] = { id: e.trackId, title: e.title, artist: e.artist, count: 0 };
+      counts[e.trackId].count++;
+    }
+    return Object.values(counts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
   }, [statsHistory]);
 
   const isLoading = recentLoading || snapshotLoading;
@@ -179,47 +201,28 @@ export default function HomeScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header: avatar + filter chips */}
+      {/* Header: greeting + avatar */}
       <View style={styles.header}>
+        <Text style={styles.greeting} numberOfLines={1}>
+          {greeting()}
+        </Text>
         <TouchableOpacity
           onPress={() => router.push('/(tabs)/settings')}
           activeOpacity={0.7}
           style={styles.avatarBtn}
         >
           <View style={styles.avatar}>
-            <Ionicons name="person" size={16} color={Colors.text} />
+            <Ionicons name="person" size={18} color={Colors.text} />
           </View>
         </TouchableOpacity>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTERS.map((f) => {
-            const active = filter === f.id;
-            return (
-              <TouchableOpacity
-                key={f.id}
-                style={[styles.filterChip, active && styles.filterChipActive]}
-                onPress={() => setFilter(f.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
-      {/* Compact 2-column recent grid */}
+      {/* Recent pill grid (2-column) — recently played tracks */}
       {isLoading ? (
         <ActivityIndicator color={Colors.accent} style={styles.loader} />
       ) : recentTracks && recentTracks.length > 0 ? (
         <View style={styles.recentGrid}>
-          {recentTracks.slice(0, 8).map((track) => (
+          {recentTracks.slice(0, 6).map((track) => (
             <TouchableOpacity
               key={track.id}
               style={styles.recentCard}
@@ -238,14 +241,48 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+      ) : (
+        <Text style={styles.emptyRecent}>
+          Play some music to see your recent history here.
+        </Text>
+      )}
+
+      {/* Most Played (from local stats) */}
+      {mostPlayed.length > 0 ? (
+        <>
+          <SectionHeader title="Most Played" />
+          <FlatList
+            data={mostPlayed}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+            renderItem={({ item }) => (
+              <MostPlayedCard
+                trackId={item.id}
+                title={item.title}
+                artist={item.artist}
+                artworkUri={artworkUrl(baseUrl, item.id)}
+                onPress={() => {
+                  const track = tracksById.get(item.id);
+                  if (track) playTrack(track, snapshot?.tracks ?? [track]);
+                }}
+              />
+            )}
+          />
+        </>
       ) : null}
 
-      {/* Jump back in */}
-      {jumpBackIn.length > 0 ? (
+      {/* Top Albums */}
+      {topAlbums.length > 0 ? (
         <>
-          <SectionHeader title="Jump back in" />
+          <SectionHeader
+            title="Top Albums"
+            rightLabel="See all"
+            onRightPress={() => router.push('/(tabs)/library')}
+          />
           <FlatList
-            data={jumpBackIn}
+            data={topAlbums}
             keyExtractor={(item) => item.id}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -262,41 +299,33 @@ export default function HomeScreen() {
         </>
       ) : null}
 
-      {/* Your top tracks (from local stats) */}
-      {statsTop.length > 0 && (
+      {/* Top Artists */}
+      {topArtists.length > 0 ? (
         <>
           <SectionHeader
-            title="Your top tracks"
+            title="Top Artists"
             rightLabel="See all"
-            onRightPress={() => router.push('/stats')}
+            onRightPress={() => router.push('/(tabs)/library')}
           />
-          {statsTop.map((t) => (
-            <TouchableOpacity
-              key={t.id}
-              style={styles.topTrackRow}
-              onPress={() => {
-                const track = snapshot?.tracks.find((tr) => tr.id === t.id);
-                if (track) playTrack(track, snapshot?.tracks);
-              }}
-              activeOpacity={0.7}
-            >
-              <Image
-                source={artworkUrl(baseUrl, t.id) ?? undefined}
-                style={styles.topTrackArtwork}
-                contentFit="cover"
-                transition={100}
-              />
-              <View style={styles.topTrackInfo}>
-                <Text style={styles.topTrackTitle} numberOfLines={1}>{t.title}</Text>
-                <Text style={styles.topTrackArtist} numberOfLines={1}>{t.artist}</Text>
-              </View>
-              <Text style={styles.topTrackCount}>{t.count}×</Text>
-            </TouchableOpacity>
-          ))}
+          <FlatList
+            data={topArtists}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+            renderItem={({ item }) => {
+              const albumId = artistRepAlbum.get(item.id);
+              return (
+                <ArtistCard
+                  artworkUri={albumId ? artworkUrl(baseUrl, albumId) : null}
+                  name={item.name}
+                  onPress={() => router.push(`/artist/${item.id}`)}
+                />
+              );
+            }}
+          />
         </>
-      )}
-
-      <View style={{ height: Spacing.xxl }} />
+      ) : null}
     </ScrollView>
   );
 }

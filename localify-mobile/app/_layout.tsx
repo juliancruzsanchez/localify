@@ -3,9 +3,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 import { useColors } from '../constants/theme';
-import { loadServerUrl } from '../hooks/useServer';
+import { useConnectionStore } from '../store/connectionStore';
 import { useDownloadStore } from '../store/downloadStore';
-import { usePlayerStore } from '../store/playerStore';
 import { useStatsStore } from '../store/statsStore';
 import { useThemeStore } from '../store/themeStore';
 
@@ -22,7 +21,6 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const initialized = useRef(false);
-  const setBaseUrl = usePlayerStore((s) => s.setBaseUrl);
   const loadDownloads = useDownloadStore((s) => s.loadDownloads);
   const loadStats = useStatsStore((s) => s.loadStats);
 
@@ -31,16 +29,25 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
     initialized.current = true;
 
     useThemeStore.getState().loadTheme();
-    loadDownloads();
     loadStats();
-    loadServerUrl().then((url) => {
-      setBaseUrl(url);
-      const inTabs = segments[0] === '(tabs)';
-      if (!url && !inTabs) {
-        router.replace('/connect');
-      } else if (url) {
-        router.replace('/(tabs)');
-      }
+    // Load downloads first so offline mode has content, then probe the server.
+    loadDownloads().finally(() => {
+      useConnectionStore
+        .getState()
+        .load()
+        .then(() => {
+          const { localUrl, publicUrl } = useConnectionStore.getState();
+          const hasServer = !!(localUrl || publicUrl);
+          const inTabs = segments[0] === '(tabs)';
+          // Enter the app whenever a server is configured — even if it's
+          // currently unreachable (offline mode). Only the first-run case
+          // with no saved address goes to the connect screen.
+          if (!hasServer && !inTabs) {
+            router.replace('/connect');
+          } else if (hasServer) {
+            router.replace('/(tabs)');
+          }
+        });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

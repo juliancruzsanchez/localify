@@ -48,12 +48,24 @@ export function useDiscoverCastDevices() {
 export function useCastTrack() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ trackId, deviceName }: { trackId: string; deviceName: string }) =>
-      invoke("cast_track", { trackId, deviceName }),
+    mutationFn: ({ trackId, deviceName, positionMs }: { trackId: string; deviceName: string; positionMs?: number }) =>
+      invoke("cast_track", { trackId, deviceName, positionMs: positionMs ?? 0 }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cast", "session"] });
     },
   });
+}
+
+export function useCastPause() {
+  return useMutation({ mutationFn: () => invoke("cast_pause") });
+}
+
+export function useCastResume() {
+  return useMutation({ mutationFn: () => invoke("cast_resume") });
+}
+
+export function useCastSeek() {
+  return useMutation({ mutationFn: (positionMs: number) => invoke("cast_seek", { positionMs }) });
 }
 
 export function useStopCast() {

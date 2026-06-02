@@ -31,7 +31,7 @@ export type DownloadState =
   | { status: "downloading"; pct: number }
   | { status: "processing"; pct: number }
   | { status: "done"; track_id: string | null }
-  | { status: "error" };
+  | { status: "error"; message?: string };
 
 export type InstallState =
   | { status: "idle" }
@@ -87,22 +87,54 @@ export function useYtdlpSearch(query: string, enabled: boolean) {
   const [results, setResults] = useState<YtdlpSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track the query that's currently in-flight so stale events are ignored
+  const activeQueryRef = useRef<string>("");
 
   useEffect(() => {
     if (!enabled || query.trim().length === 0) {
       setResults([]);
+      setLoading(false);
       return;
     }
 
+    activeQueryRef.current = query;
     let cancelled = false;
+    setResults([]);
     setLoading(true);
     setError(null);
 
-    invoke<YtdlpSearchResult[]>("ytdlp_search", { query, limit: 8 })
-      .then((res) => { if (!cancelled) { setResults(res); setLoading(false); } })
-      .catch((e) => { if (!cancelled) { setError(String(e)); setLoading(false); } });
+    // Subscribe to streaming results — each fires as soon as yt-dlp prints a line,
+    // so the first result typically appears within 2–3 s instead of waiting for all 8.
+    const unlistenPromise = listen<{ query: string; result: YtdlpSearchResult }>(
+      "ytdlp:search_result",
+      ({ payload }) => {
+        if (!cancelled && payload.query === activeQueryRef.current) {
+          setResults((prev) => [...prev, payload.result]);
+          setLoading(false);
+        }
+      },
+    );
 
-    return () => { cancelled = true; };
+    // The IPC call resolves with the authoritative final list once yt-dlp exits.
+    // Replace the streamed list with it to handle any edge cases (duplicates, ordering).
+    invoke<YtdlpSearchResult[]>("ytdlp_search", { query, limit: 8 })
+      .then((res) => {
+        if (!cancelled && query === activeQueryRef.current) {
+          setResults(res);
+          setLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled && query === activeQueryRef.current) {
+          setError(String(e));
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      unlistenPromise.then((fn) => fn());
+    };
   }, [query, enabled]);
 
   return { results, loading, error };
@@ -140,8 +172,9 @@ export function useYtdlpDownload() {
       videoId: result.id,
       title: result.title,
       artist: result.uploader,
-    }).catch(() => {
-      setDownloads((prev) => ({ ...prev, [result.id]: { status: "error" } }));
+    }).catch((e: unknown) => {
+      const message = String(e).replace(/^.*Error:\s*/i, "");
+      setDownloads((prev) => ({ ...prev, [result.id]: { status: "error", message } }));
     });
   }, []);
 

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
-import { saveServerUrl } from '../hooks/useServer';
+import { fetchWithTimeout, saveServerUrl } from '../hooks/useServer';
 import { usePlayerStore } from '../store/playerStore';
 
 function useStyles() {
@@ -110,7 +110,7 @@ export default function ConnectScreen() {
     const url = trimmed.startsWith('http') ? trimmed : `http://${trimmed}`;
 
     try {
-      const res = await fetch(`${url}/api/tracks`, { signal: AbortSignal.timeout(5000) });
+      const res = await fetchWithTimeout(`${url}/api/tracks`, 5000);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
       const saved = await saveServerUrl(trimmed);
@@ -141,13 +141,14 @@ export default function ConnectScreen() {
 
         <Text style={styles.title}>Connect to Localify</Text>
         <Text style={styles.subtitle}>
-          Enter the IP address shown in the Localify desktop app under Settings → Remote Streaming
+          Enter your computer's IP address. Localify serves on port 47823 by default
+          (Settings → Remote Streaming on the desktop shows the exact URL).
         </Text>
 
         {/* Input */}
         <TextInput
           style={styles.input}
-          placeholder="192.168.1.5:3847"
+          placeholder="192.168.1.5:47823"
           placeholderTextColor={Colors.textDim}
           value={input}
           onChangeText={(t) => {

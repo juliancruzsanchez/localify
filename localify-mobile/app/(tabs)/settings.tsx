@@ -14,8 +14,8 @@ import {
   View,
 } from 'react-native';
 import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
-import { clearServerUrl, saveServerUrl, useServer } from '../../hooks/useServer';
-import { usePlayerStore } from '../../store/playerStore';
+import { useServer } from '../../hooks/useServer';
+import { useConnectionStore } from '../../store/connectionStore';
 import { BUILT_IN_THEMES, useThemeStore } from '../../store/themeStore';
 
 function useStyles() {
@@ -136,6 +136,22 @@ function useStyles() {
       fontSize: FontSize.sm,
       fontWeight: '700',
     },
+    reconnectBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: Spacing.sm,
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      borderColor: Colors.border,
+      backgroundColor: Colors.surface,
+    },
+    reconnectText: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '700',
+    },
     destructiveRow: {
       alignItems: 'center',
       paddingVertical: Spacing.sm,
@@ -191,54 +207,73 @@ function useStyles() {
   }), [Colors]);
 }
 
+function stripScheme(url: string | null): string {
+  return url ? url.replace(/^https?:\/\//, '') : '';
+}
+
 export default function SettingsScreen() {
   const styles = useStyles();
   const Colors = useColors();
   const router = useRouter();
-  const { baseUrl } = useServer();
-  const setBaseUrl = usePlayerStore((s) => s.setBaseUrl);
+  const { baseUrl, isOffline, isChecking, localUrl, publicUrl, reconnect } = useServer();
+  const saveUrls = useConnectionStore((s) => s.saveUrls);
+  const clearUrls = useConnectionStore((s) => s.clear);
   const [editing, setEditing] = useState(false);
-  const [input, setInput] = useState('');
+  const [localInput, setLocalInput] = useState('');
+  const [publicInput, setPublicInput] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activeThemeId = useThemeStore((s) => s.activeThemeId);
   const setTheme = useThemeStore((s) => s.setTheme);
 
   useEffect(() => {
-    if (baseUrl) setInput(baseUrl.replace(/^https?:\/\//, ''));
-  }, [baseUrl]);
+    setLocalInput(stripScheme(localUrl));
+    setPublicInput(stripScheme(publicUrl));
+  }, [localUrl, publicUrl, editing]);
+
+  const statusColor = baseUrl ? Colors.accent : isChecking ? Colors.textMuted : Colors.error;
+  const statusLabel = isChecking
+    ? 'Connecting…'
+    : baseUrl
+      ? 'Connected'
+      : isOffline
+        ? 'Offline'
+        : 'Not connected';
 
   async function handleSave() {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      setError('Please enter a server address.');
+    const local = localInput.trim();
+    const pub = publicInput.trim();
+    if (!local && !pub) {
+      setError('Enter a local or public server address.');
       return;
     }
     setIsConnecting(true);
     setError(null);
-    const url = trimmed.startsWith('http') ? trimmed : `http://${trimmed}`;
     try {
-      const res = await fetch(`${url}/api/tracks`, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-      const saved = await saveServerUrl(trimmed);
-      setBaseUrl(saved);
+      const reachable = await saveUrls(local, pub);
       setEditing(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not connect to server.');
+      if (!reachable) {
+        setError("Saved, but neither address is reachable right now.");
+      }
     } finally {
       setIsConnecting(false);
     }
   }
 
+  async function handleReconnect() {
+    setError(null);
+    const ok = await reconnect();
+    if (!ok) setError('Still unable to reach the server.');
+  }
+
   function handleDisconnect() {
-    Alert.alert('Disconnect', 'Remove the server connection?', [
+    Alert.alert('Disconnect', 'Remove the saved server addresses?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Disconnect',
         style: 'destructive',
         onPress: async () => {
-          await clearServerUrl();
-          setBaseUrl(null);
+          await clearUrls();
           setEditing(false);
           router.replace('/connect');
         },
@@ -260,32 +295,73 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>SERVER</Text>
         <View style={styles.card}>
           {!editing ? (
-            <View style={styles.serverRow}>
-              <View style={[styles.statusDot, { backgroundColor: baseUrl ? Colors.accent : '#ef4444' }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.serverLabel}>{baseUrl ? 'Connected' : 'Not connected'}</Text>
-                <Text style={styles.serverUrl} numberOfLines={1}>
-                  {baseUrl ?? 'No server configured'}
-                </Text>
+            <View style={{ gap: Spacing.sm }}>
+              <View style={styles.serverRow}>
+                <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.serverLabel}>{statusLabel}</Text>
+                  <Text style={styles.serverUrl} numberOfLines={1}>
+                    {baseUrl ?? localUrl ?? publicUrl ?? 'No server configured'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.editChip}
+                  onPress={() => setEditing(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.editChipText}>Edit</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.editChip}
-                onPress={() => setEditing(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.editChipText}>Edit</Text>
-              </TouchableOpacity>
+
+              {(localUrl || publicUrl) && (
+                <TouchableOpacity
+                  style={[styles.reconnectBtn, isChecking && { opacity: 0.6 }]}
+                  onPress={handleReconnect}
+                  disabled={isChecking}
+                  activeOpacity={0.8}
+                >
+                  {isChecking ? (
+                    <ActivityIndicator color={Colors.text} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh" size={15} color={Colors.text} />
+                      <Text style={styles.reconnectText}>Reconnect</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
             </View>
           ) : (
             <View style={{ gap: Spacing.sm }}>
-              <Text style={styles.inputLabel}>Server address</Text>
+              <Text style={styles.inputLabel}>Local address (home Wi-Fi)</Text>
               <TextInput
                 style={styles.input}
-                placeholder="192.168.1.5:3847"
+                placeholder="192.168.1.5:47823"
                 placeholderTextColor={Colors.textDim}
-                value={input}
+                value={localInput}
                 onChangeText={(t) => {
-                  setInput(t);
+                  setLocalInput(t);
+                  setError(null);
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                returnKeyType="next"
+                autoFocus
+              />
+
+              <Text style={[styles.inputLabel, { marginTop: Spacing.xs }]}>
+                Public address (away from home)
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="myhome.example.com:47823"
+                placeholderTextColor={Colors.textDim}
+                value={publicInput}
+                onChangeText={(t) => {
+                  setPublicInput(t);
                   setError(null);
                 }}
                 autoCapitalize="none"
@@ -293,8 +369,8 @@ export default function SettingsScreen() {
                 keyboardType="url"
                 returnKeyType="done"
                 onSubmitEditing={handleSave}
-                autoFocus
               />
+
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <View style={styles.editActions}>
                 <TouchableOpacity
@@ -316,7 +392,7 @@ export default function SettingsScreen() {
                   {isConnecting ? (
                     <ActivityIndicator color={Colors.background} size="small" />
                   ) : (
-                    <Text style={styles.saveBtnText}>Connect</Text>
+                    <Text style={styles.saveBtnText}>Save & Connect</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -324,7 +400,7 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {baseUrl && !editing && (
+        {(localUrl || publicUrl) && !editing && (
           <TouchableOpacity
             style={styles.destructiveRow}
             onPress={handleDisconnect}

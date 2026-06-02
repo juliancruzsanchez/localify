@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ConnectionBanner } from '../../components/ConnectionBanner';
 import { NowPlayingBar } from '../../components/NowPlayingBar';
 import { useColors, FontSize } from '../../constants/theme';
 
@@ -88,13 +89,15 @@ export default function TabLayout() {
   const Colors = useColors();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerStyle: { backgroundColor: Colors.surface },
-        headerTintColor: Colors.text,
-      }}
-      tabBar={(props) => <TabBar {...props} />}
-    >
+    <View style={{ flex: 1, backgroundColor: Colors.background }}>
+      <ConnectionBanner />
+      <Tabs
+        screenOptions={{
+          headerStyle: { backgroundColor: Colors.surface },
+          headerTintColor: Colors.text,
+        }}
+        tabBar={(props) => <TabBar {...props} />}
+      >
       <Tabs.Screen
         name="index"
         options={{
@@ -135,6 +138,7 @@ export default function TabLayout() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+    </View>
   );
 }

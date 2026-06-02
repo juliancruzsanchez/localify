@@ -366,8 +366,7 @@ export default function LibraryScreen() {
     if (filter === 'artists')   return artists.map((item) => ({ type: 'artist', item }));
     if (filter === 'songs')     return songs.map((item) => ({ type: 'song', item }));
 
-    const liked: PlaylistSummary = { id: 'liked', name: 'Liked Songs', track_count: 0 };
-    const playlistItems = [liked, ...playlists].map((item) => ({ type: 'playlist', item }));
+    const playlistItems = playlists.map((item) => ({ type: 'playlist', item }));
     if (filter === 'playlists') return playlistItems;
 
     const albumItems = albums.map((item) => ({ type: 'album', item }));

@@ -8,6 +8,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Tv2, Loader2, RefreshCw, X, Wifi } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePlayerStore } from "@/store/playerStore";
@@ -24,11 +25,13 @@ export function CastButton() {
   const popoverRef      = useRef<HTMLDivElement>(null);
   const currentTrack    = usePlayerStore((s) => s.currentTrack);
 
-  const { data: devices = [] }   = useCastDevices();
-  const { data: session }        = useCastSession();
-  const discover                 = useDiscoverCastDevices();
-  const castTrack                = useCastTrack();
-  const stopCast                 = useStopCast();
+  const { data: devices = [] }      = useCastDevices();
+  const { data: session }           = useCastSession();
+  const discover                    = useDiscoverCastDevices();
+  const castTrack                   = useCastTrack();
+  const stopCast                    = useStopCast();
+  const setCastSession              = usePlayerStore((s) => s.setCastSession);
+  const positionMs                  = usePlayerStore((s) => s.positionMs);
 
   const isCasting = !!session;
 
@@ -46,13 +49,26 @@ export function CastButton() {
 
   const handleCast = (deviceName: string) => {
     if (!currentTrack) return;
-    castTrack.mutate({ trackId: currentTrack.id, deviceName }, {
-      onSuccess: () => setOpen(false),
+    // Pause local playback before handing off to the Chromecast
+    invoke("pause").catch(() => {});
+    const device = devices.find(d => d.name === deviceName);
+    castTrack.mutate({ trackId: currentTrack.id, deviceName, positionMs }, {
+      onSuccess: () => {
+        setOpen(false);
+        if (device) {
+          setCastSession({ deviceName, deviceHost: device.host });
+        }
+      },
     });
   };
 
   const handleStop = () => {
-    stopCast.mutate(undefined, { onSuccess: () => setOpen(false) });
+    stopCast.mutate(undefined, {
+      onSuccess: () => {
+        setOpen(false);
+        setCastSession(null);
+      },
+    });
   };
 
   return (

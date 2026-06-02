@@ -5,6 +5,7 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   PanResponder,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,6 +16,7 @@ import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 import { artworkUrl } from '../hooks/useLibrary';
 import { useServer } from '../hooks/useServer';
 import { usePlayerStore } from '../store/playerStore';
+import { useAudioOutput } from '../hooks/useAudioOutput';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ARTWORK_SIZE = SCREEN_WIDTH - Spacing.xl * 2;
@@ -184,15 +186,36 @@ function useStyles() {
     },
     secBtn: {
       padding: Spacing.sm,
+      alignItems: 'center',
+      gap: 4,
+    },
+    deviceLabel: {
+      color: Colors.textDim,
+      fontSize: 9,
+      maxWidth: 60,
+      textAlign: 'center',
     },
   }), [Colors]);
 }
+
+const OUTPUT_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  speaker:    'musical-note-outline',
+  headphones: 'headset-outline',
+  bluetooth:  'bluetooth-outline',
+  airplay:    'radio-outline',
+  hdmi:       'tv-outline',
+  lineout:    'tv-outline',
+  earpiece:   'phone-portrait-outline',
+  usb:        'hardware-chip-outline',
+  other:      'musical-note-outline',
+};
 
 export default function NowPlayingModal() {
   const styles = useStyles();
   const Colors = useColors();
   const router = useRouter();
   const { baseUrl } = useServer();
+  const { device, openRoutePicker } = useAudioOutput();
   const {
     currentTrack,
     isPlaying,
@@ -359,9 +382,10 @@ export default function NowPlayingModal() {
 
       {/* Secondary controls */}
       <View style={styles.secondaryControls}>
-        <TouchableOpacity hitSlop={12} style={styles.secBtn}>
-          <Ionicons name="phone-portrait-outline" size={22} color={Colors.textDim} />
-        </TouchableOpacity>
+        <Pressable onPress={openRoutePicker} hitSlop={12} style={styles.secBtn}>
+          <Ionicons name={OUTPUT_ICON[device.type] ?? 'speaker-outline'} size={22} color={Colors.textDim} />
+          <Text style={styles.deviceLabel} numberOfLines={1}>{device.name}</Text>
+        </Pressable>
         <DownloadButton track={currentTrack} size={22} />
         <TouchableOpacity hitSlop={12} style={styles.secBtn}>
           <Ionicons name="list-outline" size={24} color={Colors.textDim} />

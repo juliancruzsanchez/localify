@@ -20,13 +20,14 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{Path, Query, State as AxumState};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::routing::{get, post};
 use axum::Router;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
 
@@ -193,8 +194,39 @@ async fn serve_track(
     Ok(response)
 }
 
+/// Parse a single-range `Range: bytes=START-END` header.
+/// Returns `Some((start, end_inclusive))` clamped to the file size, or
+/// `None` if the header is absent or malformed.
+fn parse_range(header_value: &str, total: u64) -> Option<(u64, u64)> {
+    let spec = header_value.strip_prefix("bytes=")?;
+    // Only honor the first range; AVPlayer never sends multipart anyway.
+    let first = spec.split(',').next()?.trim();
+    let (start_s, end_s) = first.split_once('-')?;
+    let start_s = start_s.trim();
+    let end_s   = end_s.trim();
+
+    if start_s.is_empty() {
+        // Suffix range: "bytes=-N" → last N bytes
+        let n: u64 = end_s.parse().ok()?;
+        if n == 0 || total == 0 { return None; }
+        let n = n.min(total);
+        return Some((total - n, total - 1));
+    }
+
+    let start: u64 = start_s.parse().ok()?;
+    if start >= total { return None; }
+    let end = if end_s.is_empty() {
+        total - 1
+    } else {
+        end_s.parse::<u64>().ok()?.min(total - 1)
+    };
+    if end < start { return None; }
+    Some((start, end))
+}
+
 async fn serve_stream(
     AxumState(state): AxumState<ServerState>,
+    headers: HeaderMap,
     Path(track_id): Path<String>,
 ) -> Result<axum::response::Response<Body>, StatusCode> {
     let file_path = {
@@ -222,19 +254,42 @@ async fn serve_stream(
         _                             => "application/octet-stream",
     };
 
-    let file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+    let mut file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    let total = metadata.len();
 
-    let response = axum::response::Response::builder()
-        .status(StatusCode::OK)
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| parse_range(s, total));
+
+    let builder = axum::response::Response::builder()
         .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, metadata.len())
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_DISPOSITION, "inline")
-        .body(body)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .header("Access-Control-Allow-Origin", "*");
+
+    let response = if let Some((start, end)) = range {
+        let length = end - start + 1;
+        file.seek(SeekFrom::Start(start))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let limited = file.take(length);
+        let body = Body::from_stream(ReaderStream::new(limited));
+        builder
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_LENGTH, length)
+            .header(header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, total))
+            .body(body)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    } else {
+        let body = Body::from_stream(ReaderStream::new(file));
+        builder
+            .status(StatusCode::OK)
+            .header(header::CONTENT_LENGTH, total)
+            .body(body)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
 
     Ok(response)
 }
@@ -574,10 +629,14 @@ async fn api_album(
 ) -> axum::response::Response {
     let conn = state.db.lock().unwrap();
 
+    // LEFT JOIN to artists so an orphaned artist_id (e.g. after a partial
+    // rescan) still resolves the album with an empty artist name instead of
+    // 404ing the mobile client.
     let summary = conn.query_row(
-        "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
+        "SELECT al.id, al.title, COALESCE(ar.name, '') AS artist_name,
+                al.artist_id, al.year, al.track_count
          FROM albums al
-         JOIN artists ar ON ar.id = al.artist_id
+         LEFT JOIN artists ar ON ar.id = al.artist_id
          WHERE al.id = ?1",
         params![album_id],
         |row| Ok(AlbumSummary {
@@ -592,8 +651,14 @@ async fn api_album(
 
     let summary = match summary {
         Ok(s) => s,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return cors_not_found(),
-        Err(_) => return cors_server_error(),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            log::warn!("[api_album] no album row for id={album_id}");
+            return cors_not_found();
+        }
+        Err(e) => {
+            log::warn!("[api_album] summary query failed for id={album_id}: {e}");
+            return cors_server_error();
+        }
     };
 
     let mut stmt = match conn.prepare(
@@ -605,7 +670,10 @@ async fn api_album(
          ORDER BY t.disc_number, t.track_number",
     ) {
         Ok(s) => s,
-        Err(_) => return cors_server_error(),
+        Err(e) => {
+            log::warn!("[api_album] track stmt prepare failed: {e}");
+            return cors_server_error();
+        }
     };
 
     let tracks: Vec<TrackSummary> = match stmt.query_map(params![album_id], |row| {
@@ -615,7 +683,10 @@ async fn api_album(
         ))
     }).and_then(|rows| rows.collect()) {
         Ok(v) => v,
-        Err(_) => return cors_server_error(),
+        Err(e) => {
+            log::warn!("[api_album] track query failed for id={album_id}: {e}");
+            return cors_server_error();
+        }
     };
 
     cors_ok(&AlbumDetail {
@@ -694,14 +765,18 @@ async fn api_artist(
     };
 
     let mut stmt = match conn.prepare(
-        "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
+        "SELECT al.id, al.title, COALESCE(ar.name, '') AS artist_name,
+                al.artist_id, al.year, al.track_count
          FROM albums al
-         JOIN artists ar ON ar.id = al.artist_id
+         LEFT JOIN artists ar ON ar.id = al.artist_id
          WHERE al.artist_id = ?1
          ORDER BY al.year DESC, al.title_sort",
     ) {
         Ok(s) => s,
-        Err(_) => return cors_server_error(),
+        Err(e) => {
+            log::warn!("[api_artist] album stmt prepare failed: {e}");
+            return cors_server_error();
+        }
     };
 
     let albums: Vec<AlbumSummary> = match stmt.query_map(params![artist_id], |row| {
@@ -715,7 +790,10 @@ async fn api_artist(
         })
     }).and_then(|rows| rows.collect()) {
         Ok(v) => v,
-        Err(_) => return cors_server_error(),
+        Err(e) => {
+            log::warn!("[api_artist] album query failed for id={artist_id}: {e}");
+            return cors_server_error();
+        }
     };
 
     cors_ok(&ArtistDetail {
@@ -730,7 +808,7 @@ async fn api_artist(
 async fn api_playlists(
     AxumState(state): AxumState<ServerState>,
 ) -> axum::response::Response {
-    let result: Result<Vec<PlaylistSummary>, _> = {
+    let playlists: Result<Vec<PlaylistSummary>, _> = {
         let conn = state.db.lock().unwrap();
         let mut stmt = match conn.prepare(
             "SELECT p.id, p.name, COUNT(pt.id) as track_count
@@ -751,16 +829,76 @@ async fn api_playlists(
         })
         .and_then(|rows| rows.collect())
     };
-    match result {
-        Ok(playlists) => cors_ok(&playlists),
-        Err(_) => cors_server_error(),
-    }
+    let mut playlists = match playlists {
+        Ok(v) => v,
+        Err(_) => return cors_server_error(),
+    };
+    // Synthetic "Liked Songs" entry
+    let liked_count: i32 = {
+        let conn = state.db.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM liked_tracks lt
+             JOIN tracks t ON t.id = lt.track_id AND t.removed_at IS NULL",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0)
+    };
+    playlists.insert(0, PlaylistSummary {
+        id:          "liked".to_string(),
+        name:        "Liked Songs".to_string(),
+        track_count: liked_count,
+    });
+    cors_ok(&playlists)
 }
 
 async fn api_playlist(
     AxumState(state): AxumState<ServerState>,
     Path(playlist_id): Path<String>,
 ) -> axum::response::Response {
+    // Special case: "liked" returns liked tracks as a synthetic playlist
+    if playlist_id == "liked" {
+        let (track_count, tracks) = {
+            let conn = state.db.lock().unwrap();
+            let count: i32 = conn
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM liked_tracks lt
+                     JOIN tracks t ON t.id = lt.track_id AND t.removed_at IS NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let mut stmt = match conn.prepare(
+                "SELECT t.id, t.title, t.artist, al.title, t.album_id, t.artist_id,
+                        t.duration_secs, t.track_number, t.artwork_hash
+                 FROM liked_tracks lt
+                 JOIN tracks t ON t.id = lt.track_id AND t.removed_at IS NULL
+                 LEFT JOIN albums al ON al.id = t.album_id
+                 ORDER BY lt.liked_at DESC",
+            ) {
+                Ok(s) => s,
+                Err(_) => return cors_server_error(),
+            };
+            let tracks: Vec<TrackSummary> = match stmt.query_map([], |row| {
+                Ok(row_to_track_summary(
+                    row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
+                    row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?,
+                ))
+            }).and_then(|rows| rows.collect()) {
+                Ok(v) => v,
+                Err(_) => return cors_server_error(),
+            };
+            (count, tracks)
+        };
+        return cors_ok(&PlaylistDetail {
+            id:          "liked".to_string(),
+            name:        "Liked Songs".to_string(),
+            track_count,
+            tracks,
+        });
+    }
+
     let conn = state.db.lock().unwrap();
 
     let summary = conn.query_row(
@@ -1243,7 +1381,7 @@ async fn api_library(
         }
     };
 
-    let playlists: Vec<PlaylistSummary> = {
+    let mut playlists: Vec<PlaylistSummary> = {
         let mut stmt = match conn.prepare(
             "SELECT p.id, p.name, COUNT(pt.id) as track_count
              FROM playlists p
@@ -1265,11 +1403,33 @@ async fn api_library(
             Err(_) => return cors_server_error(),
         }
     };
+    // Synthetic "Liked Songs" entry
+    let liked_count: i32 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM liked_tracks lt
+             JOIN tracks t ON t.id = lt.track_id AND t.removed_at IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    playlists.insert(0, PlaylistSummary {
+        id:          "liked".to_string(),
+        name:        "Liked Songs".to_string(),
+        track_count: liked_count,
+    });
 
     cors_ok(&LibrarySnapshot { tracks, albums, artists, playlists })
 }
 
-/// Start the local HTTP file server on a random port and return the port.
+/// Preferred port for the LAN file server. Stable across restarts so the
+/// mobile client can reconnect to the saved URL after the desktop reboots.
+/// If something else is holding the port, fall back to a random one.
+const PREFERRED_LAN_PORT: u16 = 47823;
+
+/// Start the local HTTP file server and return the bound port.
+/// Tries `PREFERRED_LAN_PORT` first for URL stability, then falls back to a
+/// random port.
 /// Sends on `shutdown_tx` when the server should stop.
 pub async fn start_file_server(
     db: Arc<Mutex<Connection>>,
@@ -1281,9 +1441,20 @@ pub async fn start_file_server(
         app_data_dir,
     };
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
-        .await
-        .expect("Failed to bind file server");
+    let listener = match tokio::net::TcpListener::bind(
+        format!("0.0.0.0:{}", PREFERRED_LAN_PORT)
+    ).await {
+        Ok(l) => l,
+        Err(e) => {
+            log::warn!(
+                "[remote-stream] preferred port {} unavailable ({}); falling back to random",
+                PREFERRED_LAN_PORT, e
+            );
+            tokio::net::TcpListener::bind("0.0.0.0:0")
+                .await
+                .expect("Failed to bind file server")
+        }
+    };
     let port = listener.local_addr().unwrap().port();
 
     if let Some(ip) = local_ip() {
@@ -1326,7 +1497,8 @@ pub async fn start_file_server(
 // ─── Cast session (blocking, runs in std::thread) ─────────────────────────────
 
 /// Connect to a Chromecast, launch Default Media Receiver, and load a URL.
-pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str) -> Result<(), String> {
+/// `start_time_secs` > 0 tells the receiver to begin playback at that offset.
+pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str, start_time_secs: f64) -> Result<(), String> {
     use rust_cast::CastDevice;
     use rust_cast::channels::receiver::CastDeviceApp;
     use rust_cast::channels::media::{Media, StreamType};
@@ -1362,7 +1534,7 @@ pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str) 
         else { "audio/mpeg" };
 
     // Load the media
-    cast.media
+    let status = cast.media
         .load(
             &app.transport_id,
             &app.session_id,
@@ -1376,6 +1548,77 @@ pub fn start_cast_session(device_host: &str, device_port: u16, media_url: &str) 
         )
         .map_err(|e| format!("Media load failed: {e}"))?;
 
+    // Seek to the start offset after loading (the Cast protocol loads from 0 by default)
+    if start_time_secs > 0.5 {
+        if let Some(entry) = status.entries.first() {
+            let _ = cast.media.seek(
+                &app.transport_id,
+                entry.media_session_id,
+                Some(start_time_secs as f32),
+                Some(rust_cast::channels::media::ResumeState::PlaybackStart),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Pause the currently playing media on a Chromecast.
+pub fn cast_pause_media(device_host: &str, device_port: u16) -> Result<(), String> {
+    use rust_cast::CastDevice;
+    let cast = CastDevice::connect_without_host_verification(device_host, device_port)
+        .map_err(|e| format!("Connect failed: {e}"))?;
+    cast.connection.connect("receiver-0").map_err(|e| format!("Connection failed: {e}"))?;
+    cast.heartbeat.ping().map_err(|e| format!("Ping failed: {e}"))?;
+    let app = cast.receiver.get_status().map_err(|e| format!("Get status failed: {e}"))?
+        .applications.into_iter().next()
+        .ok_or_else(|| "No active app".to_string())?;
+    cast.connection.connect(&app.transport_id).map_err(|e| format!("Media connect failed: {e}"))?;
+    let status = cast.media.get_status(&app.transport_id, None)
+        .map_err(|e| format!("Get media status failed: {e}"))?;
+    let msid = status.entries.into_iter().next()
+        .ok_or_else(|| "No active media session".to_string())?.media_session_id;
+    cast.media.pause(&app.transport_id, msid).map_err(|e| format!("Pause failed: {e}"))?;
+    Ok(())
+}
+
+/// Resume the paused media on a Chromecast.
+pub fn cast_resume_media(device_host: &str, device_port: u16) -> Result<(), String> {
+    use rust_cast::CastDevice;
+    let cast = CastDevice::connect_without_host_verification(device_host, device_port)
+        .map_err(|e| format!("Connect failed: {e}"))?;
+    cast.connection.connect("receiver-0").map_err(|e| format!("Connection failed: {e}"))?;
+    cast.heartbeat.ping().map_err(|e| format!("Ping failed: {e}"))?;
+    let app = cast.receiver.get_status().map_err(|e| format!("Get status failed: {e}"))?
+        .applications.into_iter().next()
+        .ok_or_else(|| "No active app".to_string())?;
+    cast.connection.connect(&app.transport_id).map_err(|e| format!("Media connect failed: {e}"))?;
+    let status = cast.media.get_status(&app.transport_id, None)
+        .map_err(|e| format!("Get media status failed: {e}"))?;
+    let msid = status.entries.into_iter().next()
+        .ok_or_else(|| "No active media session".to_string())?.media_session_id;
+    cast.media.play(&app.transport_id, msid).map_err(|e| format!("Resume failed: {e}"))?;
+    Ok(())
+}
+
+/// Seek to `position_secs` on a Chromecast.
+pub fn cast_seek_media(device_host: &str, device_port: u16, position_secs: f64) -> Result<(), String> {
+    use rust_cast::CastDevice;
+    use rust_cast::channels::media::ResumeState;
+    let cast = CastDevice::connect_without_host_verification(device_host, device_port)
+        .map_err(|e| format!("Connect failed: {e}"))?;
+    cast.connection.connect("receiver-0").map_err(|e| format!("Connection failed: {e}"))?;
+    cast.heartbeat.ping().map_err(|e| format!("Ping failed: {e}"))?;
+    let app = cast.receiver.get_status().map_err(|e| format!("Get status failed: {e}"))?
+        .applications.into_iter().next()
+        .ok_or_else(|| "No active app".to_string())?;
+    cast.connection.connect(&app.transport_id).map_err(|e| format!("Media connect failed: {e}"))?;
+    let status = cast.media.get_status(&app.transport_id, None)
+        .map_err(|e| format!("Get media status failed: {e}"))?;
+    let msid = status.entries.into_iter().next()
+        .ok_or_else(|| "No active media session".to_string())?.media_session_id;
+    cast.media.seek(&app.transport_id, msid, Some(position_secs as f32), Some(ResumeState::PlaybackStart))
+        .map_err(|e| format!("Seek failed: {e}"))?;
     Ok(())
 }
 

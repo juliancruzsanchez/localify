@@ -60,7 +60,10 @@ export function YtdlpResultRow({ result, state, onDownload }: Props) {
         )}
 
         {state.status === "error" && (
-          <div className="flex items-center gap-1 text-xs text-red-400">
+          <div
+            className="flex items-center gap-1 text-xs text-red-400"
+            title={state.message ?? "Download failed"}
+          >
             <AlertCircle className="w-3.5 h-3.5" />
             <span>Failed</span>
           </div>
