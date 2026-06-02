@@ -84,6 +84,138 @@ pub async fn lastfm_now_playing(
         .map_err(|e: LastFmError| AppError::InvalidArgument(e.to_string()))
 }
 
+// ─── Recommendations ────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct LastFmRecTrack {
+    pub title:             String,
+    pub artist:            String,
+    pub similar_to:        String,
+    pub library_track_id:  Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LastFmRecArtist {
+    pub name:              String,
+    pub similar_to:        String,
+    pub library_artist_id: Option<String>,
+    pub top_tracks:        Vec<LastFmRecTrack>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LastFmRecommendations {
+    pub artists:   Vec<LastFmRecArtist>,
+    pub based_on:  Vec<String>,
+}
+
+/// Build personalised recommendations.
+///
+/// Flow:
+///   1. Fetch user's top-10 artists from Last.fm.
+///   2. For each seed artist fetch up to 8 similar artists (concurrently).
+///   3. Deduplicate, remove seeds, check library for artist presence.
+///   4. For each unique similar artist (up to 15) fetch top-5 tracks.
+///   5. Check each track against the library by lower-cased (artist, title).
+#[tauri::command]
+pub async fn lastfm_get_recommendations(
+    state:    State<'_, AppState>,
+    username: String,
+    api_key:  String,
+) -> Result<LastFmRecommendations> {
+    let client = LastFmClient::new(api_key.clone(), String::new());
+
+    // ── 1. User's top artists ─────────────────────────────────────────────────
+    let seeds = client
+        .get_user_top_artists(&username, 10)
+        .await
+        .map_err(|e| AppError::InvalidArgument(e.to_string()))?;
+
+    if seeds.is_empty() {
+        return Ok(LastFmRecommendations { artists: vec![], based_on: vec![] });
+    }
+
+    // ── 2. Similar artists for each seed ─────────────────────────────────────
+    let seeds_lower: std::collections::HashSet<String> =
+        seeds.iter().map(|s| s.to_lowercase()).collect();
+
+    let mut similar_by_seed: Vec<(String, Vec<(String, f32)>)> = Vec::new();
+    for seed in seeds.iter().take(5) {
+        let list = client.get_similar_artists(seed, 8).await.unwrap_or_default();
+        similar_by_seed.push((seed.clone(), list));
+    }
+
+    // ── 3. Deduplicate, remove seeds ──────────────────────────────────────────
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut candidates: Vec<(String, String)> = Vec::new();
+    for (seed, list) in &similar_by_seed {
+        for (name, _score) in list {
+            let key = name.to_lowercase();
+            if seeds_lower.contains(&key) { continue; }
+            if seen.contains(&key) { continue; }
+            seen.insert(key);
+            candidates.push((name.clone(), seed.clone()));
+            if candidates.len() >= 20 { break; }
+        }
+        if candidates.len() >= 20 { break; }
+    }
+
+    // ── 4. Check library for each similar artist ──────────────────────────────
+    let artist_check: Vec<(String, String, Option<String>)> = {
+        let conn = state.db.lock().unwrap();
+        candidates.iter().take(15).map(|(name, seed)| {
+            let id: Option<String> = conn.query_row(
+                "SELECT id FROM artists WHERE lower(name) = lower(?1) LIMIT 1",
+                rusqlite::params![name],
+                |row| row.get(0),
+            ).ok();
+            (name.clone(), seed.clone(), id)
+        }).collect()
+    };
+
+    // ── 5. Top tracks for each similar artist ────────────────────────────────
+    let mut artist_tracks: Vec<(String, String, Option<String>, Vec<(String, String)>)> = Vec::new();
+    for (name, seed, artist_id) in &artist_check {
+        let tracks = client.get_artist_top_tracks(name, 5).await.unwrap_or_default();
+        artist_tracks.push((name.clone(), seed.clone(), artist_id.clone(), tracks));
+    }
+
+    // ── 6. Check each track against the library ───────────────────────────────
+    let rec_artists: Vec<LastFmRecArtist> = {
+        let conn = state.db.lock().unwrap();
+        artist_tracks.into_iter().map(|(name, seed, artist_id, tracks)| {
+            let top_tracks = tracks.into_iter().map(|(title, artist)| {
+                let tid: Option<String> = conn.query_row(
+                    "SELECT t.id FROM tracks t
+                     WHERE lower(t.title) = lower(?1)
+                       AND lower(t.artist) = lower(?2)
+                       AND t.removed_at IS NULL
+                     LIMIT 1",
+                    rusqlite::params![title, artist],
+                    |row| row.get(0),
+                ).ok();
+                LastFmRecTrack {
+                    title,
+                    artist,
+                    similar_to: seed.clone(),
+                    library_track_id: tid,
+                }
+            }).collect();
+
+            LastFmRecArtist {
+                name,
+                similar_to: seed,
+                library_artist_id: artist_id,
+                top_tracks,
+            }
+        }).collect()
+    };
+
+    Ok(LastFmRecommendations {
+        artists:  rec_artists,
+        based_on: seeds,
+    })
+}
+
 /// Scrobble a track.  Called by the frontend when the track reaches the
 /// scrobble threshold (50 % played, or 4 minutes, whichever is smaller).
 #[tauri::command]

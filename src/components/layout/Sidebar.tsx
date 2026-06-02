@@ -1,4 +1,4 @@
-import { Home, Music, Disc3, Mic2, ListMusic, Heart, Plus, ChevronLeft, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
+import { Home, Music, Disc3, Mic2, ListMusic, Heart, Plus, ChevronLeft, ChevronRight, ChevronDown, Loader2, Radio } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { useUiStore } from "@/store/uiStore";
 import { usePlaylistsQuery } from "@/queries/playlists";
@@ -12,6 +12,7 @@ import { PlaylistContextMenu } from "@/components/playlists/PlaylistContextMenu"
 import { usePlayerStore } from "@/store/playerStore";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
+import { loadSession } from "@/queries/lastfm";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { useCoverImage } from "@/hooks/useCoverImage";
 import { useLibraryWatcher } from "@/hooks/useLibraryWatcher";
@@ -76,6 +77,7 @@ export function Sidebar() {
   const pluginRegistry = usePluginRegistrySnapshot();
   const pluginSidebarItems = pluginRegistry.getSidebarItems();
   const { isScanning, lastResult } = useLibraryWatcher();
+  const lastFmSession = loadSession();
 
   const width = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
@@ -117,6 +119,14 @@ export function Sidebar() {
         <SidebarItem to="/songs" icon={<Music size={20} />} label="Songs" collapsed={sidebarCollapsed} />
         <SidebarItem to="/albums" icon={<Disc3 size={20} />} label="Albums" collapsed={sidebarCollapsed} />
         <SidebarItem to="/artists" icon={<Mic2 size={20} />} label="Artists" collapsed={sidebarCollapsed} />
+        {lastFmSession && (
+          <SidebarItem
+            to="/lastfm/recommendations"
+            icon={<Radio size={20} />}
+            label="Recommended"
+            collapsed={sidebarCollapsed}
+          />
+        )}
       </nav>
 
       {/* Plugin sidebar items */}

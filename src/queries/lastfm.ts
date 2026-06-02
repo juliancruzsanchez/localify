@@ -8,7 +8,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import type { LastFmSession } from "@/types";
+import type { LastFmSession, LastFmRecommendations } from "@/types";
 
 const SESSION_KEY = "lastfm_session";
 
@@ -99,6 +99,22 @@ export function useLastFmNowPlaying() {
         apiSecret,
         sessionKey,
       }),
+  });
+}
+
+/** Fetch personalised recommendations.  Requires a connected session. */
+export function useLastFmRecommendations() {
+  const session = loadSession();
+  return useQuery<LastFmRecommendations>({
+    queryKey: ["lastfm", "recommendations"],
+    queryFn:  () =>
+      invoke<LastFmRecommendations>("lastfm_get_recommendations", {
+        username: session!.username,
+        apiKey:   session!.api_key,
+      }),
+    enabled:   !!session,
+    staleTime: 10 * 60 * 1000, // 10 min
+    retry:     1,
   });
 }
 

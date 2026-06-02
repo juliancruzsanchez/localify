@@ -35,7 +35,7 @@ use commands::search::search_library;
 use commands::artwork::{get_artwork_path, get_artwork_data_url, get_cover_image};
 use commands::home::{get_recently_played, get_genre_mixes};
 use commands::liked::{like_track, unlike_track, get_liked_track_ids, get_liked_tracks, get_liked_genres, export_liked_m3u8};
-use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble};
+use commands::lastfm::{lastfm_authenticate, lastfm_now_playing, lastfm_scrobble, lastfm_get_recommendations};
 use commands::tags::{get_track_tags, update_track_tags};
 use commands::audio_devices::{get_audio_output_devices, set_audio_output_device, get_selected_audio_device, db_load_device};
 use commands::cast::{discover_cast_devices, get_cast_devices, cast_track, stop_cast, get_cast_session};
@@ -186,6 +186,7 @@ pub fn run() {
             lastfm_authenticate,
             lastfm_now_playing,
             lastfm_scrobble,
+            lastfm_get_recommendations,
             // ID3 editor
             get_track_tags,
             update_track_tags,

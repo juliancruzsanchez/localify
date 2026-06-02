@@ -111,6 +111,25 @@ export interface LastFmSession {
   api_secret:  string;
 }
 
+export interface LastFmRecTrack {
+  title:            string;
+  artist:           string;
+  similar_to:       string;
+  library_track_id: string | null;
+}
+
+export interface LastFmRecArtist {
+  name:              string;
+  similar_to:        string;
+  library_artist_id: string | null;
+  top_tracks:        LastFmRecTrack[];
+}
+
+export interface LastFmRecommendations {
+  artists:  LastFmRecArtist[];
+  based_on: string[];
+}
+
 // ─── ID3 Tags ─────────────────────────────────────────────────────────────────
 
 export interface TrackTags {

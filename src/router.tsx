@@ -12,6 +12,7 @@ import { SettingsView } from "./views/SettingsView";
 import { LikedSongsView } from "./views/LikedSongsView";
 import { PluginRouteView } from "./views/PluginRouteView";
 import { VisualizerView } from "./views/VisualizerView";
+import { LastFmRecommendationsView } from "./views/LastFmRecommendationsView";
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "settings", element: <SettingsView /> },
       { path: "liked", element: <LikedSongsView /> },
       { path: "visualizer", element: <VisualizerView /> },
+      { path: "lastfm/recommendations", element: <LastFmRecommendationsView /> },
       { path: "plugins/*", element: <PluginRouteView /> },
     ],
   },
