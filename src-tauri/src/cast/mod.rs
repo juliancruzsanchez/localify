@@ -1269,6 +1269,83 @@ async fn api_library(
     cors_ok(&LibrarySnapshot { tracks, albums, artists, playlists })
 }
 
+// ─── Last.fm similar artists ──────────────────────────────────────────────────
+
+async fn api_lastfm_similar(
+    AxumState(state): AxumState<ServerState>,
+    Path(artist_name): Path<String>,
+) -> axum::response::Response {
+    let api_key: Option<String> = {
+        let conn = state.db.lock().unwrap();
+        conn.query_row(
+            "SELECT value FROM app_settings WHERE key = 'lastfm_api_key'",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+    };
+
+    let Some(api_key) = api_key else {
+        return cors_json(
+            StatusCode::NOT_FOUND,
+            &serde_json::json!({ "error": "Last.fm not configured" }),
+        );
+    };
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let resp: serde_json::Value = match async {
+        let r = http
+            .get("https://ws.audioscrobbler.com/2.0/")
+            .query(&[
+                ("method",  "artist.getsimilar"),
+                ("artist",  artist_name.as_str()),
+                ("limit",   "15"),
+                ("api_key", api_key.as_str()),
+                ("format",  "json"),
+            ])
+            .send()
+            .await?;
+        r.json::<serde_json::Value>().await
+    }
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return cors_server_error(),
+    };
+
+    let similar = resp["similarartists"]["artist"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let results: Vec<serde_json::Value> = {
+        let conn = state.db.lock().unwrap();
+        similar
+            .iter()
+            .filter_map(|a| {
+                let name = a["name"].as_str()?.to_string();
+                let library_artist_id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM artists WHERE lower(name) = lower(?1) LIMIT 1",
+                        params![name],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                Some(serde_json::json!({
+                    "name": name,
+                    "library_artist_id": library_artist_id,
+                }))
+            })
+            .collect()
+    };
+
+    cors_ok(&results)
+}
+
 /// Start the local HTTP file server on a random port and return the port.
 /// Sends on `shutdown_tx` when the server should stop.
 pub async fn start_file_server(
@@ -1309,6 +1386,7 @@ pub async fn start_file_server(
         .route("/api/stats", get(api_stats_summary))
         .route("/api/stats/history", get(api_stats_history))
         .route("/api/stats/record", post(api_stats_record))
+        .route("/api/lastfm/similar/:artist_name", get(api_lastfm_similar))
         .with_state(server_state);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();

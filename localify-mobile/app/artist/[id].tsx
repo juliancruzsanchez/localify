@@ -7,12 +7,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { AlbumCard } from '../../components/AlbumCard';
 import { SectionHeader } from '../../components/SectionHeader';
-import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
-import { artworkUrl, useArtist } from '../../hooks/useLibrary';
+import { useColors, FontSize, Spacing } from '../../constants/theme';
+import { artworkUrl, useArtist, useLastFmArtistSimilar, type SimilarArtistInfo } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 
 function useStyles() {
@@ -36,7 +37,7 @@ function useStyles() {
       paddingTop: 100,
       paddingBottom: Spacing.xl,
       paddingHorizontal: Spacing.md,
-      alignItems: 'center',
+      alignItems: 'center' as const,
       gap: Spacing.sm,
     },
     heroAvatar: {
@@ -44,20 +45,20 @@ function useStyles() {
       height: 100,
       borderRadius: 50,
       backgroundColor: Colors.surfaceElevated,
-      alignItems: 'center',
-      justifyContent: 'center',
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
       marginBottom: Spacing.sm,
     },
     heroInitials: {
       color: Colors.text,
       fontSize: FontSize.xxxl,
-      fontWeight: '700',
+      fontWeight: '700' as const,
     },
     artistName: {
       color: Colors.text,
       fontSize: FontSize.xxxl,
-      fontWeight: '700',
-      textAlign: 'center',
+      fontWeight: '700' as const,
+      textAlign: 'center' as const,
     },
     artistMeta: {
       color: Colors.textMuted,
@@ -67,11 +68,82 @@ function useStyles() {
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
     },
+    // Similar artist cards
+    similarCard: {
+      width: 90,
+      marginRight: Spacing.md,
+      alignItems: 'center' as const,
+      gap: 6,
+    },
+    similarAvatar: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+    },
+    similarAvatarDim: {
+      opacity: 0.55,
+    },
+    similarInitials: {
+      color: Colors.text,
+      fontSize: FontSize.lg,
+      fontWeight: '700' as const,
+    },
+    similarName: {
+      color: Colors.text,
+      fontSize: FontSize.sm,
+      fontWeight: '600' as const,
+      textAlign: 'center' as const,
+    },
+    similarBadge: {
+      color: Colors.accent,
+      fontSize: 10,
+      fontWeight: '700' as const,
+      textTransform: 'uppercase' as const,
+      letterSpacing: 0.5,
+    },
     bottomPad: {
       height: Spacing.xxl,
     },
   }), [Colors]);
 }
+
+// ─── Similar-artist circle card ───────────────────────────────────────────────
+
+function SimilarArtistCard({
+  artist,
+  onPress,
+}: {
+  artist: SimilarArtistInfo;
+  onPress?: () => void;
+}) {
+  const styles = useStyles();
+  const inLibrary = !!artist.library_artist_id;
+  const initials  = artist.name.slice(0, 2).toUpperCase();
+
+  return (
+    <TouchableOpacity
+      style={styles.similarCard}
+      onPress={onPress}
+      disabled={!inLibrary}
+      activeOpacity={inLibrary ? 0.7 : 1}
+    >
+      <View style={[styles.similarAvatar, !inLibrary && styles.similarAvatarDim]}>
+        <Text style={styles.similarInitials}>{initials}</Text>
+      </View>
+      <Text style={styles.similarName} numberOfLines={2}>
+        {artist.name}
+      </Text>
+      {inLibrary && (
+        <Text style={styles.similarBadge}>In library</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function ArtistDetailScreen() {
   const styles = useStyles();
@@ -80,6 +152,7 @@ export default function ArtistDetailScreen() {
   const { baseUrl } = useServer();
   const router = useRouter();
   const { data: artist, isLoading, error } = useArtist(id ?? '');
+  const { data: similar = [] } = useLastFmArtistSimilar(artist?.name ?? '');
 
   if (isLoading) {
     return (
@@ -131,6 +204,30 @@ export default function ArtistDetailScreen() {
                 title={item.title}
                 subtitle={item.year?.toString()}
                 onPress={() => router.push(`/album/${item.id}`)}
+              />
+            )}
+          />
+        </>
+      ) : null}
+
+      {/* Fans Also Like — populated when streaming server has Last.fm configured */}
+      {similar.length > 0 ? (
+        <>
+          <SectionHeader title="Fans Also Like" />
+          <FlatList
+            data={similar}
+            keyExtractor={(item) => item.name}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.albumList}
+            renderItem={({ item }) => (
+              <SimilarArtistCard
+                artist={item}
+                onPress={
+                  item.library_artist_id
+                    ? () => router.push(`/artist/${item.library_artist_id}`)
+                    : undefined
+                }
               />
             )}
           />

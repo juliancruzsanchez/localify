@@ -34,8 +34,10 @@ pub struct LastFmSession {
 
 /// Authenticate with Last.fm and return a session that the frontend should
 /// persist (username + session_key + api_key).
+/// Also persists the api_key in the DB so the mobile HTTP server can use it.
 #[tauri::command]
 pub async fn lastfm_authenticate(
+    state:       State<'_, AppState>,
     credentials: LastFmCredentials,
 ) -> Result<LastFmSession> {
     let client = LastFmClient::new(
@@ -47,6 +49,16 @@ pub async fn lastfm_authenticate(
         .get_mobile_session(&credentials.username, &credentials.password)
         .await
         .map_err(|e| AppError::InvalidArgument(e.to_string()))?;
+
+    // Persist api_key so the HTTP streaming server can call Last.fm for mobile.
+    {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at) \
+             VALUES ('lastfm_api_key', ?1, unixepoch())",
+            rusqlite::params![credentials.api_key],
+        )?;
+    }
 
     Ok(LastFmSession {
         username:    credentials.username,
@@ -82,6 +94,49 @@ pub async fn lastfm_now_playing(
         )
         .await
         .map_err(|e: LastFmError| AppError::InvalidArgument(e.to_string()))
+}
+
+// ─── Similar artists ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct SimilarArtistInfo {
+    pub name:              String,
+    pub library_artist_id: Option<String>,
+}
+
+/// Return similar artists for `artist_name`, annotated with library presence.
+#[tauri::command]
+pub async fn lastfm_get_similar_artists(
+    state:       State<'_, AppState>,
+    artist_name: String,
+    api_key:     String,
+    limit:       u32,
+) -> Result<Vec<SimilarArtistInfo>> {
+    let client = LastFmClient::new(api_key, String::new());
+    let similar = client
+        .get_similar_artists(&artist_name, limit)
+        .await
+        .map_err(|e| AppError::InvalidArgument(e.to_string()))?;
+
+    let infos = {
+        let conn = state.db.lock().unwrap();
+        similar
+            .iter()
+            .map(|(name, _score)| {
+                let id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM artists \
+                         WHERE lower(name) = lower(?1) LIMIT 1",
+                        rusqlite::params![name],
+                        |row| row.get(0),
+                    )
+                    .ok();
+                SimilarArtistInfo { name: name.clone(), library_artist_id: id }
+            })
+            .collect()
+    };
+
+    Ok(infos)
 }
 
 // ─── Recommendations ────────────────────────────────────────────────────────
