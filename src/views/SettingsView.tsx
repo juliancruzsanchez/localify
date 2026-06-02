@@ -3,17 +3,19 @@ import { cn } from "@/lib/utils";
 import { LibrarySection } from "@/components/settings/LibrarySection";
 import { AudioSection }   from "@/components/settings/AudioSection";
 import { LastFmSection }  from "@/components/settings/LastFmSection";
+import { RemoteSection }  from "@/components/settings/RemoteSection";
 import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { PluginsView }    from "@/views/PluginsView";
 import { DeveloperSection } from "@/components/settings/DeveloperSection";
 import { usePluginRegistrySnapshot } from "@/plugins/PluginRegistryContext";
 
-type BuiltInTab = "library" | "audio" | "lastfm" | "extensions" | "developer" | "appearance";
+type BuiltInTab = "library" | "audio" | "lastfm" | "remote" | "extensions" | "developer" | "appearance";
 
 const BUILT_IN_TABS: { id: BuiltInTab; label: string }[] = [
   { id: "library",    label: "Library"    },
   { id: "audio",      label: "Audio"      },
   { id: "lastfm",     label: "Last.fm"    },
+  { id: "remote",     label: "Remote"     },
   { id: "appearance", label: "Appearance" },
   { id: "extensions", label: "Extensions" },
   { id: "developer",  label: "Developer"  },
@@ -81,6 +83,7 @@ export function SettingsView() {
             {activeTab === "library"    && <LibrarySection />}
             {activeTab === "audio"      && <AudioSection />}
             {activeTab === "lastfm"     && <LastFmSection />}
+            {activeTab === "remote"     && <RemoteSection />}
             {activeTab === "appearance" && <AppearanceSection />}
             {activeTab === "developer"  && <DeveloperSection />}
             {pluginSections.map((section) =>

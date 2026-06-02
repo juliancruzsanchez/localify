@@ -60,16 +60,6 @@ fn yt_dlp_version(bin: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-async fn has_ffmpeg() -> bool {
-    tokio::process::Command::new("ffmpeg")
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
@@ -235,7 +225,8 @@ pub async fn ytdlp_download(
     artist: String,
 ) -> Result<String> {
     let bin = resolve_bin(&state.app_data_dir);
-    let ffmpeg_ok = has_ffmpeg().await;
+    let ffmpeg_ok = crate::commands::ffmpeg::ffmpeg_available(&state.app_data_dir).await;
+    let ffmpeg_loc = crate::commands::ffmpeg::resolve_ffmpeg(&state.app_data_dir);
 
     let lib_path = {
         let conn = state.db.lock().unwrap();
@@ -275,6 +266,8 @@ pub async fn ytdlp_download(
     ];
     if ffmpeg_ok {
         args.extend(["--audio-format", "mp3", "--audio-quality", "0", "--embed-thumbnail"]);
+        // Point yt-dlp at our managed ffmpeg when it isn't on PATH.
+        args.extend(["--ffmpeg-location", ffmpeg_loc.as_str()]);
     }
 
     let mut child = tokio::process::Command::new(&bin)

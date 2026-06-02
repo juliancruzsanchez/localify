@@ -224,37 +224,61 @@ fn parse_range(header_value: &str, total: u64) -> Option<(u64, u64)> {
     Some((start, end))
 }
 
-async fn serve_stream(
-    AxumState(state): AxumState<ServerState>,
-    headers: HeaderMap,
-    Path(track_id): Path<String>,
+/// Container/codec extensions Apple's AVFoundation decodes natively, so iOS
+/// clients (expo-av) can play them straight from disk. Anything else gets
+/// transcoded to AAC on the fly.
+fn is_avfoundation_native(ext: Option<&str>) -> bool {
+    matches!(
+        ext,
+        Some("mp3") | Some("m4a") | Some("aac") | Some("mp4")
+            | Some("wav") | Some("aif") | Some("aiff") | Some("caf") | Some("alac")
+    )
+}
+
+/// Transcode `src` to AAC in an MP4 container at `dest`, caching the result.
+/// `ffmpeg_bin` is the resolved ffmpeg command (managed copy or PATH fallback).
+/// Writes to a temp file and atomically renames so concurrent requests never
+/// observe a half-written file. `+faststart` front-loads the moov atom so the
+/// served file is seekable. Returns `Err` if ffmpeg is unavailable or fails.
+async fn ensure_transcoded(ffmpeg_bin: &str, src: &str, dest: &std::path::Path) -> Result<(), ()> {
+    if dest.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|_| ())?;
+    }
+
+    let mut tmp = dest.as_os_str().to_owned();
+    tmp.push(format!(".tmp.{}", std::process::id()));
+    let tmp = std::path::PathBuf::from(tmp);
+
+    let status = tokio::process::Command::new(ffmpeg_bin)
+        .args(["-v", "error", "-y", "-i"])
+        .arg(src)
+        .args(["-vn", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart"])
+        .arg(&tmp)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .map_err(|_| ())?;
+
+    if !status.success() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(());
+    }
+
+    tokio::fs::rename(&tmp, dest).await.map_err(|_| ())?;
+    Ok(())
+}
+
+/// Serve a file from disk with HTTP range support (seeking) and CORS.
+async fn serve_file_range(
+    path: &std::path::Path,
+    content_type: &str,
+    headers: &HeaderMap,
 ) -> Result<axum::response::Response<Body>, StatusCode> {
-    let file_path = {
-        let conn = state.db.lock().unwrap();
-        conn.query_row(
-            "SELECT file_path FROM tracks WHERE id = ?1 AND removed_at IS NULL",
-            params![track_id],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|_| StatusCode::NOT_FOUND)?
-    };
-
-    let content_type = match std::path::Path::new(&file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_lowercase)
-        .as_deref()
-    {
-        Some("mp3")                   => "audio/mpeg",
-        Some("flac")                  => "audio/flac",
-        Some("ogg") | Some("opus")   => "audio/ogg",
-        Some("m4a") | Some("aac")    => "audio/mp4",
-        Some("wav")                   => "audio/wav",
-        Some("aiff") | Some("aif")   => "audio/aiff",
-        _                             => "application/octet-stream",
-    };
-
-    let mut file = File::open(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+    let mut file = File::open(path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let metadata = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let total = metadata.len();
 
@@ -292,6 +316,53 @@ async fn serve_stream(
     };
 
     Ok(response)
+}
+
+async fn serve_stream(
+    AxumState(state): AxumState<ServerState>,
+    headers: HeaderMap,
+    Path(track_id): Path<String>,
+) -> Result<axum::response::Response<Body>, StatusCode> {
+    let file_path = {
+        let conn = state.db.lock().unwrap();
+        conn.query_row(
+            "SELECT file_path FROM tracks WHERE id = ?1 AND removed_at IS NULL",
+            params![track_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|_| StatusCode::NOT_FOUND)?
+    };
+
+    let ext = std::path::Path::new(&file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase);
+
+    // Formats AVFoundation can't decode (FLAC, OGG, Opus, WMA, …) are transcoded
+    // to AAC so iOS clients can play them. The result is cached per track id.
+    if !is_avfoundation_native(ext.as_deref()) {
+        let ffmpeg_bin = crate::commands::ffmpeg::resolve_ffmpeg(&state.app_data_dir);
+        let dest = state
+            .app_data_dir
+            .join("transcode_cache")
+            .join(format!("{}.m4a", track_id));
+        if ensure_transcoded(&ffmpeg_bin, &file_path, &dest).await.is_ok() {
+            return serve_file_range(&dest, "audio/mp4", &headers).await;
+        }
+        // ffmpeg missing or failed — fall through to serving the original bytes.
+    }
+
+    let content_type = match ext.as_deref() {
+        Some("mp3")                   => "audio/mpeg",
+        Some("flac")                  => "audio/flac",
+        Some("ogg") | Some("opus")   => "audio/ogg",
+        Some("m4a") | Some("aac")    => "audio/mp4",
+        Some("wav")                   => "audio/wav",
+        Some("aiff") | Some("aif")   => "audio/aiff",
+        _                             => "application/octet-stream",
+    };
+
+    serve_file_range(std::path::Path::new(&file_path), content_type, &headers).await
 }
 
 #[derive(Deserialize)]
