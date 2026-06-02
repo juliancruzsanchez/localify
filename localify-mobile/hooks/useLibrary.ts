@@ -329,6 +329,26 @@ export function useLibrarySnapshot() {
   return withOffline(q, isOffline, offlineSnapshot);
 }
 
+// ── Last.fm similar artists ───────────────────────────────────────────────────
+
+export interface SimilarArtistInfo {
+  name:              string;
+  library_artist_id: string | null;
+}
+
+export function useLastFmArtistSimilar(artistName: string) {
+  const { baseUrl } = useServer();
+  return useQuery<SimilarArtistInfo[]>({
+    queryKey: ['lastfm-similar', baseUrl, artistName],
+    queryFn:  () =>
+      apiFetch<SimilarArtistInfo[]>(
+        `${baseUrl}/api/lastfm/similar/${encodeURIComponent(artistName)}`,
+      ),
+    enabled:   !!baseUrl && !!artistName,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
 // ── Artwork URL helper ────────────────────────────────────────────────────────
 
 export function artworkUrl(baseUrl: string | null, id: string): string | null {

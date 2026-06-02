@@ -8,7 +8,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import type { LastFmSession } from "@/types";
+import type { LastFmSession, LastFmRecommendations } from "@/types";
 
 const SESSION_KEY = "lastfm_session";
 
@@ -99,6 +99,43 @@ export function useLastFmNowPlaying() {
         apiSecret,
         sessionKey,
       }),
+  });
+}
+
+export interface SimilarArtistInfo {
+  name:              string;
+  library_artist_id: string | null;
+}
+
+/** Fetch similar artists for a given artist name.  Returns [] if no session. */
+export function useLastFmArtistSimilar(artistName: string) {
+  const session = loadSession();
+  return useQuery<SimilarArtistInfo[]>({
+    queryKey:  ["lastfm", "similar-artists", artistName],
+    queryFn:   () =>
+      invoke<SimilarArtistInfo[]>("lastfm_get_similar_artists", {
+        artistName,
+        apiKey: session!.api_key,
+        limit:  15,
+      }),
+    enabled:   !!session && !!artistName,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+/** Fetch personalised recommendations.  Requires a connected session. */
+export function useLastFmRecommendations() {
+  const session = loadSession();
+  return useQuery<LastFmRecommendations>({
+    queryKey: ["lastfm", "recommendations"],
+    queryFn:  () =>
+      invoke<LastFmRecommendations>("lastfm_get_recommendations", {
+        username: session!.username,
+        apiKey:   session!.api_key,
+      }),
+    enabled:   !!session,
+    staleTime: 10 * 60 * 1000, // 10 min
+    retry:     1,
   });
 }
 
