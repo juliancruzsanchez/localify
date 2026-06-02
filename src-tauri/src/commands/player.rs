@@ -1,3 +1,4 @@
+use rusqlite::params;
 use tauri::State;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -25,8 +26,12 @@ pub async fn play_track(
     let (file_path, title, artist, album, artwork_file, duration_ms) = {
         let conn = state.db.lock().unwrap();
         let track = get_track_by_id(&conn, &track_id)?;
-        // Increment play count
+        // Increment play count and record to play_history
         let _ = crate::db::tracks::increment_play_count(&conn, &track_id);
+        let _ = conn.execute(
+            "INSERT INTO play_history (track_id, played_at, source) VALUES (?1, strftime('%s','now')*1000, 'desktop')",
+            params![track_id],
+        );
 
         let artwork_file = track.artwork_hash.as_ref().map(|hash| {
             state

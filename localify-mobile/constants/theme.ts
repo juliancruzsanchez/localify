@@ -1,17 +1,8 @@
-export const Colors = {
-  background: '#121212',
-  surface: '#181818',
-  surfaceElevated: '#282828',
-  accent: '#1db954',
-  accentHover: '#1ed760',
-  text: '#ffffff',
-  textMuted: '#b3b3b3',
-  textDim: '#6a6a6a',
-  tabBar: '#000000',
-  border: '#282828',
-  error: '#e33',
-};
+// Re-export theme utilities from the theme store
+export { useColors, BUILT_IN_THEMES, useThemeStore } from '../store/themeStore';
+export type { ThemeColors, AppTheme } from '../store/themeStore';
 
+// Static layout constants (don't change with theme)
 export const Spacing = {
   xs: 4,
   sm: 8,

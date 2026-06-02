@@ -1,22 +1,81 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { AlbumCard } from '../../components/AlbumCard';
 import { SectionHeader } from '../../components/SectionHeader';
-import { Colors, FontSize, Radius, Spacing } from '../../constants/theme';
+import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, useArtist } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: Colors.background,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: Colors.background,
+    },
+    errorText: {
+      color: Colors.textMuted,
+      fontSize: FontSize.base,
+    },
+    heroBanner: {
+      paddingTop: 100,
+      paddingBottom: Spacing.xl,
+      paddingHorizontal: Spacing.md,
+      alignItems: 'center',
+      gap: Spacing.sm,
+    },
+    heroAvatar: {
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      backgroundColor: Colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: Spacing.sm,
+    },
+    heroInitials: {
+      color: Colors.text,
+      fontSize: FontSize.xxxl,
+      fontWeight: '700',
+    },
+    artistName: {
+      color: Colors.text,
+      fontSize: FontSize.xxxl,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    artistMeta: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+    },
+    albumList: {
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+    },
+    bottomPad: {
+      height: Spacing.xxl,
+    },
+  }), [Colors]);
+}
+
 export default function ArtistDetailScreen() {
+  const styles = useStyles();
+  const Colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { baseUrl } = useServer();
   const router = useRouter();
@@ -82,58 +141,3 @@ export default function ArtistDetailScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.background,
-  },
-  errorText: {
-    color: Colors.textMuted,
-    fontSize: FontSize.base,
-  },
-  heroBanner: {
-    paddingTop: 100,
-    paddingBottom: Spacing.xl,
-    paddingHorizontal: Spacing.md,
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  heroAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.sm,
-  },
-  heroInitials: {
-    color: Colors.text,
-    fontSize: FontSize.xxxl,
-    fontWeight: '700',
-  },
-  artistName: {
-    color: Colors.text,
-    fontSize: FontSize.xxxl,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  artistMeta: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-  },
-  albumList: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  bottomPad: {
-    height: Spacing.xxl,
-  },
-});

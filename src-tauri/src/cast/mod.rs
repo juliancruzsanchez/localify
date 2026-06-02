@@ -21,7 +21,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::extract::{Path, Query, State as AxumState};
 use axum::http::{StatusCode, header};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use rusqlite::{Connection, params};
@@ -313,8 +313,9 @@ struct TrackSummary {
 #[derive(Debug, Serialize)]
 struct AlbumSummary {
     id:          String,
-    name:        String,
+    title:       String,
     artist:      String,
+    artist_id:   String,
     year:        Option<i32>,
     track_count: i32,
 }
@@ -337,11 +338,20 @@ struct PlaylistSummary {
 #[derive(Debug, Serialize)]
 struct AlbumDetail {
     id:          String,
-    name:        String,
+    title:       String,
     artist:      String,
+    artist_id:   String,
     year:        Option<i32>,
     track_count: i32,
     tracks:      Vec<TrackSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct LibrarySnapshot {
+    tracks:    Vec<TrackSummary>,
+    albums:    Vec<AlbumSummary>,
+    artists:   Vec<ArtistSummary>,
+    playlists: Vec<PlaylistSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -532,7 +542,7 @@ async fn api_albums(
     let result: Result<Vec<AlbumSummary>, _> = {
         let conn = state.db.lock().unwrap();
         let mut stmt = match conn.prepare(
-            "SELECT al.id, al.title, ar.name, al.year, al.track_count
+            "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
              FROM albums al
              JOIN artists ar ON ar.id = al.artist_id
              ORDER BY al.title_sort",
@@ -543,10 +553,11 @@ async fn api_albums(
         stmt.query_map([], |row| {
             Ok(AlbumSummary {
                 id:          row.get(0)?,
-                name:        row.get(1)?,
+                title:       row.get(1)?,
                 artist:      row.get(2)?,
-                year:        row.get(3)?,
-                track_count: row.get(4)?,
+                artist_id:   row.get(3)?,
+                year:        row.get(4)?,
+                track_count: row.get(5)?,
             })
         })
         .and_then(|rows| rows.collect())
@@ -564,17 +575,18 @@ async fn api_album(
     let conn = state.db.lock().unwrap();
 
     let summary = conn.query_row(
-        "SELECT al.id, al.title, ar.name, al.year, al.track_count
+        "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
          FROM albums al
          JOIN artists ar ON ar.id = al.artist_id
          WHERE al.id = ?1",
         params![album_id],
         |row| Ok(AlbumSummary {
             id:          row.get(0)?,
-            name:        row.get(1)?,
+            title:       row.get(1)?,
             artist:      row.get(2)?,
-            year:        row.get(3)?,
-            track_count: row.get(4)?,
+            artist_id:   row.get(3)?,
+            year:        row.get(4)?,
+            track_count: row.get(5)?,
         }),
     );
 
@@ -608,8 +620,9 @@ async fn api_album(
 
     cors_ok(&AlbumDetail {
         id:          summary.id,
-        name:        summary.name,
+        title:       summary.title,
         artist:      summary.artist,
+        artist_id:   summary.artist_id,
         year:        summary.year,
         track_count: summary.track_count,
         tracks,
@@ -681,7 +694,7 @@ async fn api_artist(
     };
 
     let mut stmt = match conn.prepare(
-        "SELECT al.id, al.title, ar.name, al.year, al.track_count
+        "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
          FROM albums al
          JOIN artists ar ON ar.id = al.artist_id
          WHERE al.artist_id = ?1
@@ -694,10 +707,11 @@ async fn api_artist(
     let albums: Vec<AlbumSummary> = match stmt.query_map(params![artist_id], |row| {
         Ok(AlbumSummary {
             id:          row.get(0)?,
-            name:        row.get(1)?,
+            title:       row.get(1)?,
             artist:      row.get(2)?,
-            year:        row.get(3)?,
-            track_count: row.get(4)?,
+            artist_id:   row.get(3)?,
+            year:        row.get(4)?,
+            track_count: row.get(5)?,
         })
     }).and_then(|rows| rows.collect()) {
         Ok(v) => v,
@@ -844,7 +858,7 @@ async fn api_search(
 
     let albums: Vec<AlbumSummary> = {
         let mut stmt = match conn.prepare(
-            "SELECT al.id, al.title, ar.name, al.year, al.track_count
+            "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
              FROM albums al
              JOIN artists ar ON ar.id = al.artist_id
              WHERE al.title LIKE ?1 OR ar.name LIKE ?1
@@ -857,10 +871,11 @@ async fn api_search(
         match stmt.query_map(params![like], |row| {
             Ok(AlbumSummary {
                 id:          row.get(0)?,
-                name:        row.get(1)?,
+                title:       row.get(1)?,
                 artist:      row.get(2)?,
-                year:        row.get(3)?,
-                track_count: row.get(4)?,
+                artist_id:   row.get(3)?,
+                year:        row.get(4)?,
+                track_count: row.get(5)?,
             })
         }).and_then(|rows| rows.collect()) {
             Ok(v) => v,
@@ -902,17 +917,26 @@ async fn api_search(
 
 async fn api_artwork(
     AxumState(state): AxumState<ServerState>,
-    Path(track_id): Path<String>,
+    Path(id): Path<String>,
 ) -> axum::response::Response {
     let artwork_hash: Option<String> = {
         let conn = state.db.lock().unwrap();
-        conn.query_row(
+        // Try as track ID first
+        let by_track = conn.query_row(
             "SELECT artwork_hash FROM tracks WHERE id = ?1 AND removed_at IS NULL",
-            params![track_id],
-            |row| row.get(0),
-        )
-        .ok()
-        .flatten()
+            params![id],
+            |row| row.get::<_, Option<String>>(0),
+        ).ok().flatten();
+        if by_track.is_some() {
+            by_track
+        } else {
+            // Fallback: treat as album ID — find any track in this album with artwork
+            conn.query_row(
+                "SELECT artwork_hash FROM tracks WHERE album_id = ?1 AND removed_at IS NULL AND artwork_hash IS NOT NULL LIMIT 1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            ).ok()
+        }
     };
 
     let hash = match artwork_hash {
@@ -942,6 +966,307 @@ async fn api_artwork(
         .header("Access-Control-Allow-Origin", "*")
         .body(body)
         .unwrap_or_else(|_| cors_server_error())
+}
+
+// ─── Stats types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+struct PlayHistoryEntry {
+    track_id:    String,
+    title:       String,
+    artist:      String,
+    album:       String,
+    played_at:   i64,
+    listen_ms:   i64,
+    completed:   bool,
+    source:      String,
+}
+
+#[derive(Debug, Serialize)]
+struct TopItem {
+    id:     String,
+    name:   String,
+    count:  i64,
+    ms:     i64,
+}
+
+#[derive(Debug, Serialize)]
+struct StatsSummary {
+    total_plays:      i64,
+    total_listen_ms:  i64,
+    unique_tracks:    i64,
+    unique_artists:   i64,
+    top_tracks:       Vec<TopItem>,
+    top_artists:      Vec<TopItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordPlayBody {
+    track_id:   String,
+    listen_ms:  Option<i64>,
+    completed:  Option<bool>,
+    source:     Option<String>,
+}
+
+// ─── Stats handlers ───────────────────────────────────────────────────────────
+
+async fn api_stats_summary(
+    AxumState(state): AxumState<ServerState>,
+) -> axum::response::Response {
+    let conn = state.db.lock().unwrap();
+
+    let total_plays: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM play_history", [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    let total_listen_ms: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(listen_ms),0) FROM play_history", [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    let unique_tracks: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT track_id) FROM play_history", [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    let unique_artists: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT t.artist) FROM play_history ph JOIN tracks t ON t.id = ph.track_id",
+        [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    let top_tracks: Vec<TopItem> = {
+        let mut stmt = match conn.prepare(
+            "SELECT ph.track_id, t.title, COUNT(*) as plays, COALESCE(SUM(ph.listen_ms),0) as ms
+             FROM play_history ph
+             JOIN tracks t ON t.id = ph.track_id
+             GROUP BY ph.track_id
+             ORDER BY plays DESC
+             LIMIT 20",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(TopItem { id: row.get(0)?, name: row.get(1)?, count: row.get(2)?, ms: row.get(3)? })
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => vec![],
+        }
+    };
+
+    let top_artists: Vec<TopItem> = {
+        let mut stmt = match conn.prepare(
+            "SELECT t.artist_id, t.artist, COUNT(*) as plays, COALESCE(SUM(ph.listen_ms),0) as ms
+             FROM play_history ph
+             JOIN tracks t ON t.id = ph.track_id
+             GROUP BY t.artist
+             ORDER BY plays DESC
+             LIMIT 20",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(TopItem { id: row.get(0).unwrap_or_default(), name: row.get(1)?, count: row.get(2)?, ms: row.get(3)? })
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => vec![],
+        }
+    };
+
+    cors_ok(&StatsSummary { total_plays, total_listen_ms, unique_tracks, unique_artists, top_tracks, top_artists })
+}
+
+#[derive(Deserialize)]
+struct HistoryQuery {
+    limit: Option<i64>,
+}
+
+async fn api_stats_history(
+    AxumState(state): AxumState<ServerState>,
+    Query(q): Query<HistoryQuery>,
+) -> axum::response::Response {
+    let limit = q.limit.unwrap_or(100).min(1000);
+    let conn = state.db.lock().unwrap();
+
+    let mut stmt = match conn.prepare(
+        "SELECT ph.track_id, t.title, t.artist, COALESCE(al.title,'') as album,
+                ph.played_at, ph.listen_ms, ph.completed, ph.source
+         FROM play_history ph
+         JOIN tracks t ON t.id = ph.track_id
+         LEFT JOIN albums al ON al.id = t.album_id
+         ORDER BY ph.played_at DESC
+         LIMIT ?1",
+    ) {
+        Ok(s) => s,
+        Err(_) => return cors_server_error(),
+    };
+
+    let entries: Vec<PlayHistoryEntry> = match stmt.query_map(params![limit], |row| {
+        Ok(PlayHistoryEntry {
+            track_id:  row.get(0)?,
+            title:     row.get(1)?,
+            artist:    row.get(2)?,
+            album:     row.get(3)?,
+            played_at: row.get(4)?,
+            listen_ms: row.get(5)?,
+            completed: row.get::<_, i32>(6)? != 0,
+            source:    row.get(7)?,
+        })
+    }).and_then(|rows| rows.collect()) {
+        Ok(v) => v,
+        Err(_) => return cors_server_error(),
+    };
+
+    cors_ok(&entries)
+}
+
+async fn api_stats_record(
+    AxumState(state): AxumState<ServerState>,
+    axum::extract::Json(body): axum::extract::Json<RecordPlayBody>,
+) -> axum::response::Response {
+    let conn = state.db.lock().unwrap();
+
+    // Verify track exists
+    let exists: bool = conn.query_row(
+        "SELECT 1 FROM tracks WHERE id = ?1 AND removed_at IS NULL",
+        params![body.track_id],
+        |_| Ok(true),
+    ).unwrap_or(false);
+
+    if !exists {
+        return cors_not_found();
+    }
+
+    let listen_ms  = body.listen_ms.unwrap_or(0);
+    let completed  = body.completed.unwrap_or(false) as i32;
+    let source     = body.source.unwrap_or_else(|| "mobile".to_string());
+
+    let result = conn.execute(
+        "INSERT INTO play_history (track_id, played_at, listen_ms, completed, source)
+         VALUES (?1, strftime('%s','now')*1000, ?2, ?3, ?4)",
+        params![body.track_id, listen_ms, completed, source],
+    );
+
+    if result.is_err() {
+        return cors_server_error();
+    }
+
+    // Also update the tracks table play_count / last_played_at
+    let _ = conn.execute(
+        "UPDATE tracks SET play_count = play_count + 1, last_played_at = unixepoch() WHERE id = ?1",
+        params![body.track_id],
+    );
+
+    axum::response::Response::builder()
+        .status(StatusCode::CREATED)
+        .header("Access-Control-Allow-Origin", "*")
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn api_library(
+    AxumState(state): AxumState<ServerState>,
+) -> axum::response::Response {
+    let conn = state.db.lock().unwrap();
+
+    let tracks: Vec<TrackSummary> = {
+        let mut stmt = match conn.prepare(
+            "SELECT t.id, t.title, t.artist, al.title, t.album_id, t.artist_id,
+                    t.duration_secs, t.track_number, t.artwork_hash
+             FROM tracks t
+             LEFT JOIN albums al ON al.id = t.album_id
+             WHERE t.removed_at IS NULL
+             ORDER BY t.artist_sort, al.title_sort, t.disc_number, t.track_number",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(row_to_track_summary(
+                row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
+                row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?,
+            ))
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => return cors_server_error(),
+        }
+    };
+
+    let albums: Vec<AlbumSummary> = {
+        let mut stmt = match conn.prepare(
+            "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
+             FROM albums al
+             JOIN artists ar ON ar.id = al.artist_id
+             ORDER BY al.title_sort",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(AlbumSummary {
+                id:          row.get(0)?,
+                title:       row.get(1)?,
+                artist:      row.get(2)?,
+                artist_id:   row.get(3)?,
+                year:        row.get(4)?,
+                track_count: row.get(5)?,
+            })
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => return cors_server_error(),
+        }
+    };
+
+    let artists: Vec<ArtistSummary> = {
+        let mut stmt = match conn.prepare(
+            "SELECT ar.id, ar.name,
+                    COUNT(DISTINCT al.id) as album_count,
+                    COUNT(DISTINCT t.id) as track_count
+             FROM artists ar
+             LEFT JOIN albums al ON al.artist_id = ar.id
+             LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
+             GROUP BY ar.id
+             ORDER BY ar.name_sort",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(ArtistSummary {
+                id:          row.get(0)?,
+                name:        row.get(1)?,
+                album_count: row.get(2)?,
+                track_count: row.get(3)?,
+            })
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => return cors_server_error(),
+        }
+    };
+
+    let playlists: Vec<PlaylistSummary> = {
+        let mut stmt = match conn.prepare(
+            "SELECT p.id, p.name, COUNT(pt.id) as track_count
+             FROM playlists p
+             LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+             GROUP BY p.id
+             ORDER BY p.name COLLATE NOCASE",
+        ) {
+            Ok(s) => s,
+            Err(_) => return cors_server_error(),
+        };
+        match stmt.query_map([], |row| {
+            Ok(PlaylistSummary {
+                id:          row.get(0)?,
+                name:        row.get(1)?,
+                track_count: row.get(2)?,
+            })
+        }).and_then(|rows| rows.collect()) {
+            Ok(v) => v,
+            Err(_) => return cors_server_error(),
+        }
+    };
+
+    cors_ok(&LibrarySnapshot { tracks, albums, artists, playlists })
 }
 
 /// Start the local HTTP file server on a random port and return the port.
@@ -980,6 +1305,10 @@ pub async fn start_file_server(
         .route("/api/playlist/:id", get(api_playlist))
         .route("/api/search", get(api_search))
         .route("/api/artwork/:track_id", get(api_artwork))
+        .route("/api/library.json", get(api_library))
+        .route("/api/stats", get(api_stats_summary))
+        .route("/api/stats/history", get(api_stats_history))
+        .route("/api/stats/record", post(api_stats_record))
         .with_state(server_state);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();

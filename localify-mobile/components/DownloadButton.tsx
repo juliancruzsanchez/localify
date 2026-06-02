@@ -1,4 +1,5 @@
-import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -6,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Colors, FontSize } from '../constants/theme';
+import { useColors, FontSize } from '../constants/theme';
 import { useDownloadStore } from '../store/downloadStore';
 import { usePlayerStore } from '../store/playerStore';
 import type { TrackSummary } from '../hooks/useLibrary';
@@ -16,7 +17,25 @@ interface Props {
   size?: number;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: 28,
+      minHeight: 28,
+    },
+    pct: {
+      color: Colors.accent,
+      marginTop: 1,
+    },
+  }), [Colors]);
+}
+
 export function DownloadButton({ track, size = 18 }: Props) {
+  const styles = useStyles();
+  const Colors = useColors();
   const baseUrl  = usePlayerStore((s) => s.baseUrl);
   const status   = useDownloadStore((s) => s.getStatus(track.id));
   const progress = useDownloadStore((s) => s.progress[track.id] ?? 0);
@@ -42,7 +61,7 @@ export function DownloadButton({ track, size = 18 }: Props) {
         style={styles.container}
         accessibilityLabel="Delete download"
       >
-        <Text style={[styles.icon, { fontSize: size, color: Colors.accent }]}>⬇</Text>
+        <Ionicons name="checkmark-circle" size={size} color={Colors.accent} />
       </TouchableOpacity>
     );
   }
@@ -55,33 +74,11 @@ export function DownloadButton({ track, size = 18 }: Props) {
       disabled={!baseUrl}
       accessibilityLabel="Download for offline"
     >
-      <Text
-        style={[
-          styles.icon,
-          {
-            fontSize: size,
-            color: status === 'error' ? Colors.error : Colors.textDim,
-          },
-        ]}
-      >
-        {status === 'error' ? '⚠' : '⬇'}
-      </Text>
+      {status === 'error' ? (
+        <Ionicons name="warning-outline" size={size} color={Colors.error} />
+      ) : (
+        <Ionicons name="arrow-down-outline" size={size} color={Colors.textDim} />
+      )}
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 28,
-    minHeight: 28,
-  },
-  icon: {
-    textAlign: 'center',
-  },
-  pct: {
-    color: Colors.accent,
-    marginTop: 1,
-  },
-});

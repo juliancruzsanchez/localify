@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Colors, FontSize, Radius, Spacing } from '../constants/theme';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { useColors, FontSize, Radius, Spacing } from '../constants/theme';
 
 interface Props {
   artworkUri: string | null;
@@ -11,7 +11,32 @@ interface Props {
   onPress?: () => void;
 }
 
+function useStyles() {
+  const Colors = useColors();
+  return useMemo(() => StyleSheet.create({
+    container: {
+      marginRight: Spacing.md,
+    },
+    artwork: {
+      borderRadius: Radius.md,
+      backgroundColor: Colors.surfaceElevated,
+    },
+    title: {
+      color: Colors.text,
+      fontSize: FontSize.md,
+      fontWeight: '600',
+      marginTop: Spacing.sm,
+    },
+    subtitle: {
+      color: Colors.textMuted,
+      fontSize: FontSize.sm,
+      marginTop: 2,
+    },
+  }), [Colors]);
+}
+
 export function AlbumCard({ artworkUri, title, subtitle, size = 150, onPress }: Props) {
+  const styles = useStyles();
   return (
     <TouchableOpacity style={[styles.container, { width: size }]} onPress={onPress} activeOpacity={0.7}>
       <Image
@@ -31,24 +56,3 @@ export function AlbumCard({ artworkUri, title, subtitle, size = 150, onPress }: 
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    marginRight: Spacing.md,
-  },
-  artwork: {
-    borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceElevated,
-  },
-  title: {
-    color: Colors.text,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    marginTop: Spacing.sm,
-  },
-  subtitle: {
-    color: Colors.textMuted,
-    fontSize: FontSize.sm,
-    marginTop: 2,
-  },
-});

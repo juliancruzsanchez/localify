@@ -2,19 +2,20 @@ import { Audio, AVPlaybackStatus } from 'expo-av';
 import { create } from 'zustand';
 import type { TrackSummary } from '../hooks/useLibrary';
 import { useDownloadStore } from './downloadStore';
+import { useStatsStore } from './statsStore';
 
-// ── Singleton sound object ────────────────────────────────────────────────────
+// ── Singleton sound ───────────────────────────────────────────────────────────
 
 let soundInstance: Audio.Sound | null = null;
 
 async function getSoundInstance(): Promise<Audio.Sound> {
-  if (!soundInstance) {
-    soundInstance = new Audio.Sound();
-  }
+  if (!soundInstance) soundInstance = new Audio.Sound();
   return soundInstance;
 }
 
-// ── Store ─────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export type RepeatMode = 'none' | 'one' | 'all';
 
 interface PlayerState {
   currentTrack: TrackSummary | null;
@@ -24,6 +25,12 @@ interface PlayerState {
   positionMs: number;
   durationMs: number;
   baseUrl: string | null;
+  shuffleEnabled: boolean;
+  repeatMode: RepeatMode;
+  likedTrackIds: Record<string, boolean>;
+
+  // Track when current track started playing (for stats finalization)
+  _playStartMs: number;
 
   // Actions
   setBaseUrl: (url: string | null) => void;
@@ -32,8 +39,13 @@ interface PlayerState {
   playPrevious: () => Promise<void>;
   togglePlayPause: () => Promise<void>;
   seek: (ms: number) => Promise<void>;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
+  toggleLike: (trackId: string) => void;
   _onPlaybackStatus: (status: AVPlaybackStatus) => void;
 }
+
+// ── Store ─────────────────────────────────────────────────────────────────────
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
@@ -43,8 +55,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   positionMs: 0,
   durationMs: 0,
   baseUrl: null,
+  shuffleEnabled: false,
+  repeatMode: 'none',
+  likedTrackIds: {},
+  _playStartMs: 0,
 
   setBaseUrl: (url) => set({ baseUrl: url }),
+
+  toggleShuffle: () => set((s) => ({ shuffleEnabled: !s.shuffleEnabled })),
+
+  cycleRepeat: () => set((s) => {
+    const modes: RepeatMode[] = ['none', 'all', 'one'];
+    const next = modes[(modes.indexOf(s.repeatMode) + 1) % modes.length];
+    return { repeatMode: next };
+  }),
+
+  toggleLike: (trackId) => set((s) => {
+    const next = { ...s.likedTrackIds };
+    if (next[trackId]) delete next[trackId];
+    else next[trackId] = true;
+    return { likedTrackIds: next };
+  }),
 
   _onPlaybackStatus: (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
@@ -54,13 +85,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       durationMs: status.durationMillis ?? 0,
     });
     if (status.didJustFinish) {
+      // Finalize stats for the completed track
+      const { currentTrack, _playStartMs } = get();
+      if (currentTrack && _playStartMs > 0) {
+        useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs);
+      }
       get().playNext();
     }
   },
 
   playTrack: async (track: TrackSummary, queue?: TrackSummary[]) => {
-    const { baseUrl } = get();
+    const { baseUrl, currentTrack, _playStartMs } = get();
     if (!baseUrl) return;
+
+    // Finalize stats for previous track
+    if (currentTrack && _playStartMs > 0) {
+      useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs);
+    }
 
     const newQueue = queue ?? [track];
     const newIndex = newQueue.findIndex((t) => t.id === track.id);
@@ -72,7 +113,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const sound = await getSoundInstance();
 
-    // Unload any existing track
     try {
       const status = await sound.getStatusAsync();
       if (status.isLoaded) {
@@ -80,14 +120,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         await sound.unloadAsync();
       }
     } catch {
-      // Ignore unload errors
+      // ignore
     }
 
-    // Prefer locally downloaded file over network stream
     const localUri = useDownloadStore.getState().getLocalUri(track.id);
     const uri = localUri ?? `${baseUrl}/stream/${track.id}`;
     await sound.loadAsync({ uri }, { shouldPlay: true });
     sound.setOnPlaybackStatusUpdate(get()._onPlaybackStatus);
+
+    // Record play in stats
+    useStatsStore.getState().recordPlay(track);
 
     set({
       currentTrack: track,
@@ -95,35 +137,55 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queueIndex: newIndex >= 0 ? newIndex : 0,
       isPlaying: true,
       positionMs: 0,
+      _playStartMs: Date.now(),
     });
   },
 
   playNext: async () => {
-    const { queue, queueIndex } = get();
-    const nextIndex = queueIndex + 1;
-    if (nextIndex < queue.length) {
-      await get().playTrack(queue[nextIndex], queue);
-      set({ queueIndex: nextIndex });
+    const { queue, queueIndex, shuffleEnabled, repeatMode } = get();
+
+    // Repeat-one: restart current track
+    if (repeatMode === 'one') {
+      const sound = await getSoundInstance();
+      try {
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          await sound.setPositionAsync(0);
+          if (!status.isPlaying) await sound.playAsync();
+          set({ positionMs: 0 });
+        }
+      } catch {}
+      return;
     }
+
+    let nextIndex: number;
+    if (shuffleEnabled && queue.length > 1) {
+      const pool = queue.map((_, i) => i).filter((i) => i !== queueIndex);
+      nextIndex = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      nextIndex = queueIndex + 1;
+      if (nextIndex >= queue.length) {
+        if (repeatMode === 'all') nextIndex = 0;
+        else return; // queue ended
+      }
+    }
+
+    await get().playTrack(queue[nextIndex], queue);
   },
 
   playPrevious: async () => {
     const { queue, queueIndex, positionMs } = get();
-    // If more than 3 seconds in, restart current track
     if (positionMs > 3000) {
       const sound = await getSoundInstance();
       try {
         await sound.setPositionAsync(0);
         set({ positionMs: 0 });
-      } catch {
-        // Ignore seek errors
-      }
+      } catch {}
       return;
     }
     const prevIndex = queueIndex - 1;
     if (prevIndex >= 0) {
       await get().playTrack(queue[prevIndex], queue);
-      set({ queueIndex: prevIndex });
     }
   },
 
@@ -133,15 +195,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       const status = await sound.getStatusAsync();
       if (!status.isLoaded) return;
-      if (isPlaying) {
-        await sound.pauseAsync();
-      } else {
-        await sound.playAsync();
-      }
+      if (isPlaying) await sound.pauseAsync();
+      else await sound.playAsync();
       set({ isPlaying: !isPlaying });
-    } catch {
-      // Ignore playback errors
-    }
+    } catch {}
   },
 
   seek: async (ms: number) => {
@@ -149,8 +206,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       await sound.setPositionAsync(ms);
       set({ positionMs: ms });
-    } catch {
-      // Ignore seek errors
-    }
+    } catch {}
   },
 }));
