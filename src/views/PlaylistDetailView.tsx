@@ -3,12 +3,17 @@ import { useParams } from "react-router";
 import { Play, Shuffle, Pencil, Camera, X, Check, Loader2, Download } from "lucide-react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { useDndMonitor } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePlaylistQuery, usePlaylistTracksQuery, useReorderPlaylistTrack, useUpdatePlaylist, useSetPlaylistCover } from "@/queries/playlists";
+import { queryKeys } from "@/queries/keys";
 import { usePlayerStore } from "@/store/playerStore";
 import { formatTime } from "@/lib/formatTime";
 import { TrackRow } from "@/components/tracks/TrackRow";
 import { PlaylistCover } from "@/components/playlists/PlaylistCover";
 import { cn } from "@/lib/utils";
+import type { PlaylistTrack } from "@/types";
 
 export function PlaylistDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +23,36 @@ export function PlaylistDetailView() {
 
   const updatePlaylist  = useUpdatePlaylist();
   const setCover        = useSetPlaylistCover();
+  const reorderTrack    = useReorderPlaylistTrack(id!);
+  const qc              = useQueryClient();
+
+  // Reorder via drag: backend stores `position` as an f64 fractional index, so
+  // we drop the moved entry at the midpoint between its new neighbors (or
+  // ±1 past the ends). Renormalization happens server-side when gaps shrink.
+  useDndMonitor({
+    onDragEnd: (event) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const fromIdx = playlistTracks.findIndex((pt) => pt.id === active.id);
+      const toIdx = playlistTracks.findIndex((pt) => pt.id === over.id);
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      const reordered = arrayMove(playlistTracks, fromIdx, toIdx);
+      const before = reordered[toIdx - 1];
+      const after = reordered[toIdx + 1];
+      let newPosition: number;
+      if (!before) newPosition = (after?.position ?? 0) - 1;
+      else if (!after) newPosition = before.position + 1;
+      else newPosition = (before.position + after.position) / 2;
+
+      const optimistic: PlaylistTrack[] = reordered.map((pt, i) =>
+        i === toIdx ? { ...pt, position: newPosition } : pt,
+      );
+      qc.setQueryData(queryKeys.playlistTracks(id!), optimistic);
+
+      reorderTrack.mutate({ entryId: reordered[toIdx].id, newPosition });
+    },
+  });
 
   // ── inline editing ─────────────────────────────────────────────────────────
   const [editing, setEditing]           = useState(false);
@@ -261,14 +296,20 @@ export function PlaylistDetailView() {
             This playlist is empty. Add songs from any track's context menu.
           </p>
         ) : (
-          tracks.map((track, i) => (
-            <TrackRow
-              key={playlistTracks[i].id}
-              track={track}
-              index={i}
-              queue={tracks}
-            />
-          ))
+          <SortableContext
+            items={playlistTracks.map((pt) => pt.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {tracks.map((track, i) => (
+              <TrackRow
+                key={playlistTracks[i].id}
+                track={track}
+                index={i}
+                queue={tracks}
+                sortableId={playlistTracks[i].id}
+              />
+            ))}
+          </SortableContext>
         )}
       </div>
     </div>

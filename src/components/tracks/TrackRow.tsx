@@ -1,5 +1,7 @@
 import { Play, Music, Heart } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "react-router";
 import { usePlayerStore } from "@/store/playerStore";
 import { useIsLiked, useLikeTrack, useUnlikeTrack } from "@/queries/liked";
@@ -16,9 +18,11 @@ interface TrackRowProps {
   queue: Track[];
   isActive?: boolean;
   style?: React.CSSProperties;
+  /** When set, this row becomes sortable within a parent SortableContext using this id (typically the PlaylistTrack entry id). */
+  sortableId?: string;
 }
 
-export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps) {
+export function TrackRow({ track, index, queue, isActive, style, sortableId }: TrackRowProps) {
   const navigate = useNavigate();
   const { playTrack, togglePlayPause, isPlaying, currentTrack } = usePlayerStore();
   const isLiked = useIsLiked(track.id);
@@ -26,11 +30,26 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
   const { mutate: unlikeTrack } = useUnlikeTrack();
   const artworkPath = useArtworkUrl(track.artwork_hash);
 
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const draggable = useDraggable({
     id: `track-${track.id}`,
     data: { type: "track", track },
     attributes: { tabIndex: -1 },
+    disabled: !!sortableId,
   });
+
+  const sortable = useSortable({
+    id: sortableId ?? `__noop-${track.id}`,
+    data: { type: "track", track },
+    disabled: !sortableId,
+  });
+
+  const setNodeRef = sortableId ? sortable.setNodeRef : draggable.setNodeRef;
+  const listeners = sortableId ? sortable.listeners : draggable.listeners;
+  const attributes = sortableId ? sortable.attributes : draggable.attributes;
+  const isDragging = sortableId ? sortable.isDragging : draggable.isDragging;
+  const sortableStyle: React.CSSProperties | undefined = sortableId
+    ? { transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }
+    : undefined;
 
   const handlePlay = () => {
     if (isActive && isPlaying) {
@@ -47,7 +66,7 @@ export function TrackRow({ track, index, queue, isActive, style }: TrackRowProps
       {...listeners}
       {...attributes}
       data-track-id={track.id}
-      style={style}
+      style={{ ...style, ...sortableStyle }}
       onClick={handlePlay}
       className={cn(
         "group flex items-center gap-3 px-4 py-2 rounded-md text-sm hover:bg-white/5 cursor-default transition-colors",
