@@ -146,13 +146,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   seek: async (positionMs) => {
     const { castSession } = get();
+    const target = Math.round(positionMs);
+    // Optimistic update so the slider visual is in place immediately, before
+    // the IPC round trip resolves.
+    set({ positionMs: target });
     try {
       if (castSession) {
-        await invoke("cast_seek", { positionMs: Math.round(positionMs) });
+        await invoke("cast_seek", { positionMs: target });
       } else {
-        await invoke("seek", { positionMs: Math.round(positionMs) });
+        await invoke("seek", { positionMs: target });
       }
-      set({ positionMs: Math.round(positionMs) });
     } catch (e) {
       console.error("seek failed:", e);
     }

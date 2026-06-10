@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Outlet, useNavigate } from "react-router";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -48,6 +48,9 @@ export default function App() {
   // Last.fm scrobbling (no-ops when not connected)
   useLastFmScrobbling();
   const lastPlayStartedAt = usePlayerStore((s) => s._lastPlayStartedAt);
+  // Tracks the previous polled is_playing so we can detect a true→false
+  // transition (end-of-track) and auto-advance to the next song.
+  const prevIsPlayingRef = useRef<boolean | null>(null);
 
   const sidebarW = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
@@ -90,18 +93,37 @@ export default function App() {
         // the backend's is_playing may still reflect the previous track state
         // for a brief window — overwriting the optimistic "true" we set in
         // playTrack() would cause a visible flash to "paused".
-        const inTransition = Date.now() - lastPlayStartedAt < 600;
-        if (!inTransition) {
-          setIsPlaying(state.is_playing);
-          if (state.position_ms >= 0) setPosition(state.position_ms);
-          if (state.duration_ms > 0) setDuration(state.duration_ms);
+        const inPlayTransition = Date.now() - lastPlayStartedAt < 600;
+        if (inPlayTransition) {
+          prevIsPlayingRef.current = null;
+          return;
         }
+
+        setIsPlaying(state.is_playing);
+        if (state.duration_ms > 0) setDuration(state.duration_ms);
+        if (state.position_ms >= 0) setPosition(state.position_ms);
+
+        // End-of-track detection: is_playing flipped true→false with the
+        // wall-clock position pinned at duration (cpal disconnect path).
+        // Manual pause leaves position < duration, so the threshold check
+        // distinguishes the two. Falls back to the player:ended event if
+        // one ever gets emitted from Rust.
+        const prev = prevIsPlayingRef.current;
+        if (
+          prev === true &&
+          state.is_playing === false &&
+          state.duration_ms > 0 &&
+          state.position_ms >= state.duration_ms - 1000
+        ) {
+          playNext();
+        }
+        prevIsPlayingRef.current = state.is_playing;
       } catch {
         // Not in Tauri context (tests / browser preview)
       }
     }, 250);
     return () => clearInterval(pollTimer);
-  }, [lastPlayStartedAt, setPosition, setDuration, setIsPlaying]);
+  }, [lastPlayStartedAt, setPosition, setDuration, setIsPlaying, playNext]);
 
   const queueCol = queueOpen ? `${QUEUE_PANEL_WIDTH}px` : "0px";
 

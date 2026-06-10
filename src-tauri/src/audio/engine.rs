@@ -129,6 +129,11 @@ struct ActivePlayback {
     stop:      Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     seek_tx:   Sender<u64>,
+    /// Set by the audio loop when a Seek command arrives. The cpal callback
+    /// checks this on each invocation and, if set, drops any buffered
+    /// pre-seek samples so the user hears the new position immediately
+    /// instead of waiting for several seconds of stale decoded audio to drain.
+    flush:     Arc<AtomicBool>,
 }
 
 impl ActivePlayback {
@@ -167,6 +172,7 @@ fn build_stream(
     volume:     Arc<AtomicU32>,
     is_paused:  Arc<AtomicBool>,
     is_playing: Arc<AtomicBool>,
+    flush:      Arc<AtomicBool>,
     viz_tx:     VisualizerTx,
 ) -> Option<cpal::Stream> {
     use cpal::traits::DeviceTrait;
@@ -208,6 +214,13 @@ fn build_stream(
         .build_output_stream::<f32, _, _>(
             &config,
             move |data: &mut [f32], _| {
+                // Drop pre-seek buffered audio so the new position is audible
+                // within ~10 ms instead of waiting for the queue to drain.
+                if flush.swap(false, Ordering::Relaxed) {
+                    current = None;
+                    while rx.try_recv().is_ok() {}
+                }
+
                 if is_paused.load(Ordering::Relaxed) {
                     data.fill(0.0);
                     return;
@@ -309,6 +322,7 @@ fn start_playback(
 
     let (samples_tx, samples_rx) = bounded::<Vec<f32>>(256);
     let is_paused = Arc::new(AtomicBool::new(false));
+    let flush     = Arc::new(AtomicBool::new(false));
 
     let viz_tx: VisualizerTx = viz_app_handle.map(|ah| {
         let (vtx, vrx) = bounded::<Vec<f32>>(16);
@@ -324,6 +338,7 @@ fn start_playback(
         volume.clone(),
         is_paused.clone(),
         is_playing.clone(),
+        flush.clone(),
         viz_tx,
     ) {
         Some(s) => s,
@@ -357,7 +372,7 @@ fn start_playback(
     }
 
     is_playing.store(true, Ordering::Relaxed);
-    *active = Some(ActivePlayback { stream, stop, is_paused, seek_tx });
+    *active = Some(ActivePlayback { stream, stop, is_paused, seek_tx, flush });
 }
 
 fn reconnect_watcher(
@@ -513,6 +528,11 @@ fn audio_loop(
 
             Ok(PlayerCommand::Seek { position_ms: pos }) => {
                 if let Some(ref act) = active {
+                    // Flip flush first so the cpal callback drops the queued
+                    // pre-seek samples on its next invocation; otherwise the
+                    // user hears several seconds of stale audio before the
+                    // decode thread's post-seek chunks make it through.
+                    act.flush.store(true, Ordering::Relaxed);
                     let _ = act.seek_tx.send(pos);
                 }
                 // Update wall clock immediately so get_player_state reflects the
