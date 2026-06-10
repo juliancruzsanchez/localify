@@ -47,7 +47,6 @@ export default function App() {
 
   // Last.fm scrobbling (no-ops when not connected)
   useLastFmScrobbling();
-  const lastPlayStartedAt = usePlayerStore((s) => s._lastPlayStartedAt);
   // Tracks the previous polled is_playing so we can detect a true→false
   // transition (end-of-track) and auto-advance to the next song.
   const prevIsPlayingRef = useRef<boolean | null>(null);
@@ -88,13 +87,16 @@ export default function App() {
     const pollTimer = setInterval(async () => {
       try {
         const state = await invoke<PlayerState>("get_player_state");
-        // Suppress is_playing sync for 600 ms after playTrack() is called.
-        // The Rust audio loop processes the Play command asynchronously, so
-        // the backend's is_playing may still reflect the previous track state
-        // for a brief window — overwriting the optimistic "true" we set in
-        // playTrack() would cause a visible flash to "paused".
-        const inPlayTransition = Date.now() - lastPlayStartedAt < 600;
-        if (inPlayTransition) {
+
+        // Skip when the backend hasn't caught up to the frontend's current
+        // track yet — between playTrack() and Rust's Play handler running,
+        // the backend still reports the previous track's wall clock and
+        // duration. Letting those leak through pegs the slider at the old
+        // ratio (e.g. position == old duration -> 100 %) until the IPC
+        // catches up. Reading getState() avoids stale closures and extra
+        // re-renders.
+        const frontendTrackId = usePlayerStore.getState().currentTrack?.id ?? null;
+        if (state.current_track_id !== frontendTrackId) {
           prevIsPlayingRef.current = null;
           return;
         }
@@ -123,7 +125,7 @@ export default function App() {
       }
     }, 250);
     return () => clearInterval(pollTimer);
-  }, [lastPlayStartedAt, setPosition, setDuration, setIsPlaying, playNext]);
+  }, [setPosition, setDuration, setIsPlaying, playNext]);
 
   const queueCol = queueOpen ? `${QUEUE_PANEL_WIDTH}px` : "0px";
 

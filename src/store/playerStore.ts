@@ -17,8 +17,6 @@ interface PlayerStore {
   volumePct: number;
   shuffleEnabled: boolean;
   repeatMode: RepeatMode;
-  /** Timestamp (Date.now()) of last playTrack call — used to suppress poll flicker. */
-  _lastPlayStartedAt: number;
   /** Non-null when audio is being routed to a Chromecast. */
   castSession: CastSessionInfo | null;
 
@@ -50,7 +48,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   volumePct: 80,
   shuffleEnabled: false,
   repeatMode: "none",
-  _lastPlayStartedAt: 0,
   castSession: null,
 
   playTrack: async (track, queue = [], index = 0) => {
@@ -65,7 +62,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       isPlaying: true,
       positionMs: 0,
       durationMs: Math.round(track.duration_secs * 1000),
-      _lastPlayStartedAt: Date.now(),
     });
     try {
       if (castSession) {
