@@ -86,9 +86,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
     if (status.didJustFinish) {
       // Finalize stats for the completed track
-      const { currentTrack, _playStartMs } = get();
+      const { currentTrack, _playStartMs, baseUrl } = get();
       if (currentTrack && _playStartMs > 0) {
-        useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs);
+        useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs, baseUrl);
       }
       get().playNext();
     }
@@ -102,16 +102,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     // Finalize stats for previous track
     if (currentTrack && _playStartMs > 0) {
-      useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs);
+      useStatsStore.getState().finalizePlay(currentTrack.id, Date.now() - _playStartMs, baseUrl);
     }
 
     const newQueue = queue ?? [track];
     const newIndex = newQueue.findIndex((t) => t.id === track.id);
-
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-    });
 
     const sound = await getSoundInstance();
 
@@ -130,7 +125,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     sound.setOnPlaybackStatusUpdate(get()._onPlaybackStatus);
 
     // Record play in stats
-    useStatsStore.getState().recordPlay(track);
+    useStatsStore.getState().recordPlay(track, baseUrl);
 
     set({
       currentTrack: track,

@@ -12,6 +12,7 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     pub cast:         Arc<CastState>,
     pub plugins:      Arc<PluginRegistry>,
+    #[allow(dead_code)]
     pub media_control: Option<MediaControlHandle>,
     pub watcher:      Arc<Mutex<Option<crate::watcher::LibraryWatcher>>>,
     pub discord_rpc:  Arc<DiscordRpcHandle>,

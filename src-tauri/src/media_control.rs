@@ -76,14 +76,14 @@ mod platform {
     impl MPNowPlayingInfoCenter {
         extern_methods!(
             #[unsafe(method(defaultCenter))]
-            pub fn defaultCenter() -> Retained<MPNowPlayingInfoCenter>;
+            pub fn default_center() -> Retained<MPNowPlayingInfoCenter>;
 
             #[unsafe(method(setNowPlayingInfo:))]
-            pub fn setNowPlayingInfo(&self, info: Option<&NSDictionary>);
+            pub fn set_now_playing_info(&self, info: Option<&NSDictionary>);
 
             // Required on macOS 10.12.2+ for Control Center to show the widget.
             #[unsafe(method(setPlaybackState:))]
-            pub fn setPlaybackState(&self, state: u64);
+            pub fn set_playback_state(&self, state: u64);
         );
     }
 
@@ -94,25 +94,25 @@ mod platform {
     impl MPRemoteCommandCenter {
         extern_methods!(
             #[unsafe(method(sharedCommandCenter))]
-            pub fn sharedCommandCenter() -> Retained<MPRemoteCommandCenter>;
+            pub fn shared_command_center() -> Retained<MPRemoteCommandCenter>;
 
             #[unsafe(method(playCommand))]
-            pub fn playCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn play_command(&self) -> Retained<MPRemoteCommand>;
 
             #[unsafe(method(pauseCommand))]
-            pub fn pauseCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn pause_command(&self) -> Retained<MPRemoteCommand>;
 
             #[unsafe(method(nextTrackCommand))]
-            pub fn nextTrackCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn next_track_command(&self) -> Retained<MPRemoteCommand>;
 
             #[unsafe(method(previousTrackCommand))]
-            pub fn previousTrackCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn previous_track_command(&self) -> Retained<MPRemoteCommand>;
 
             #[unsafe(method(changePlaybackPositionCommand))]
-            pub fn changePlaybackPositionCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn change_playback_position_command(&self) -> Retained<MPRemoteCommand>;
 
             #[unsafe(method(togglePlayPauseCommand))]
-            pub fn togglePlayPauseCommand(&self) -> Retained<MPRemoteCommand>;
+            pub fn toggle_play_pause_command(&self) -> Retained<MPRemoteCommand>;
         );
     }
 
@@ -123,7 +123,7 @@ mod platform {
     impl MPRemoteCommand {
         extern_methods!(
             #[unsafe(method(setEnabled:))]
-            pub fn setEnabled(&self, enabled: bool);
+            pub fn set_enabled(&self, enabled: bool);
         );
     }
 
@@ -139,11 +139,11 @@ mod platform {
         app_handle: tauri::AppHandle,
         is_playing: Arc<AtomicBool>,
     ) {
-        let center = MPRemoteCommandCenter::sharedCommandCenter();
+        let center = MPRemoteCommandCenter::shared_command_center();
 
         // ── Play ───────────────────────────────────────────────────────────
-        let play_cmd = center.playCommand();
-        play_cmd.setEnabled(true);
+        let play_cmd = center.play_command();
+        play_cmd.set_enabled(true);
         let tx = cmd_tx.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
             tx.send(PlayerCommand::Resume).ok();
@@ -154,8 +154,8 @@ mod platform {
         }
 
         // ── Pause ──────────────────────────────────────────────────────────
-        let pause_cmd = center.pauseCommand();
-        pause_cmd.setEnabled(true);
+        let pause_cmd = center.pause_command();
+        pause_cmd.set_enabled(true);
         let tx = cmd_tx.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
             tx.send(PlayerCommand::Pause).ok();
@@ -167,8 +167,8 @@ mod platform {
 
         // ── Toggle play/pause (headphone button) ───────────────────────────
         // Check the shared is_playing flag so we send the right command.
-        let toggle_cmd = center.togglePlayPauseCommand();
-        toggle_cmd.setEnabled(true);
+        let toggle_cmd = center.toggle_play_pause_command();
+        toggle_cmd.set_enabled(true);
         let tx = cmd_tx.clone();
         let flag = is_playing.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
@@ -184,8 +184,8 @@ mod platform {
         }
 
         // ── Next Track ─────────────────────────────────────────────────────
-        let next_cmd = center.nextTrackCommand();
-        next_cmd.setEnabled(true);
+        let next_cmd = center.next_track_command();
+        next_cmd.set_enabled(true);
         let ah = app_handle.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
             let _ = ah.emit("next-track", ());
@@ -196,8 +196,8 @@ mod platform {
         }
 
         // ── Previous Track ─────────────────────────────────────────────────
-        let prev_cmd = center.previousTrackCommand();
-        prev_cmd.setEnabled(true);
+        let prev_cmd = center.previous_track_command();
+        prev_cmd.set_enabled(true);
         let ah = app_handle.clone();
         let block = Box::into_raw(Box::new(RcBlock::new(move |_: *mut NSObject| -> i64 {
             let _ = ah.emit("previous-track", ());
@@ -208,8 +208,8 @@ mod platform {
         }
 
         // ── Seek ───────────────────────────────────────────────────────────
-        let seek_cmd = center.changePlaybackPositionCommand();
-        seek_cmd.setEnabled(true);
+        let seek_cmd = center.change_playback_position_command();
+        seek_cmd.set_enabled(true);
         let tx = cmd_tx;
         let block = Box::into_raw(Box::new(RcBlock::new(move |event: *mut NSObject| -> i64 {
             let pos: f64 = unsafe { msg_send![event, positionTime] };
@@ -290,15 +290,15 @@ mod platform {
 
     fn set_now_playing(info: &TrackMetadata, rate: f64, state: u64) {
         let dict   = build_now_playing_dict(info, rate);
-        let center = MPNowPlayingInfoCenter::defaultCenter();
-        center.setNowPlayingInfo(Some(&dict));
-        center.setPlaybackState(state);
+        let center = MPNowPlayingInfoCenter::default_center();
+        center.set_now_playing_info(Some(&dict));
+        center.set_playback_state(state);
     }
 
     fn clear_now_playing() {
-        let center = MPNowPlayingInfoCenter::defaultCenter();
-        center.setNowPlayingInfo(None);
-        center.setPlaybackState(MP_STATE_STOPPED);
+        let center = MPNowPlayingInfoCenter::default_center();
+        center.set_now_playing_info(None);
+        center.set_playback_state(MP_STATE_STOPPED);
     }
 
     fn create_media_item_artwork(
@@ -332,7 +332,7 @@ mod platform {
             if artwork.is_null() {
                 return None;
             }
-            Some(unsafe { Retained::from_raw(artwork).unwrap_unchecked() })
+            Some(Retained::from_raw(artwork).unwrap_unchecked())
         }
     }
 

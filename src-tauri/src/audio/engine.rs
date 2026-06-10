@@ -26,6 +26,7 @@ pub enum PlayerCommand {
     Stop,
     /// Switch the audio output to the named device (None = system default).
     SwitchDevice { device_name: Option<String> },
+    #[allow(dead_code)]
     Shutdown,
 }
 
@@ -49,6 +50,7 @@ pub struct PlayerHandle {
     /// Name of the currently selected output device (None = default).
     pub selected_device:    Arc<Mutex<Option<String>>>,
     /// File path of the track currently loaded (Some even while paused).
+    #[allow(dead_code)]
     pub current_file_path:  Arc<Mutex<Option<String>>>,
     pub viz_app_handle:     Arc<Mutex<Option<tauri::AppHandle>>>,
     /// Wall-clock playback tracking — position when the clock was last started/reset.
@@ -261,6 +263,7 @@ fn build_stream(
 
 // ─── Audio loop ───────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 fn start_playback(
     file_path: &str,
     start_ms: u64,
@@ -268,8 +271,8 @@ fn start_playback(
     is_playing: &Arc<AtomicBool>,
     position_ms: &Arc<AtomicI64>,
     duration_ms: &Arc<AtomicI64>,
-    current_track_id: &Arc<Mutex<Option<String>>>,
-    current_file_path: &Arc<Mutex<Option<String>>>,
+    _current_track_id: &Arc<Mutex<Option<String>>>,
+    _current_file_path: &Arc<Mutex<Option<String>>>,
     eq_config: &Arc<Mutex<EqConfig>>,
     selected_device: &Arc<Mutex<Option<String>>>,
     volume: &Arc<AtomicU32>,
@@ -504,9 +507,8 @@ fn audio_loop(
                 // Restart wall clock from the stored paused position.
                 *wall_start_time.lock().unwrap() = Some(Instant::now());
                 let pos = wall_start_pos_ms.load(Ordering::Relaxed);
-                let dur = duration_ms.load(Ordering::Relaxed);
+                let _dur = duration_ms.load(Ordering::Relaxed);
                 send_media_update(&media_update_tx, MediaControlUpdate::Resumed(pos.max(0) as u64));
-                let _ = dur; // suppress unused warning
             }
 
             Ok(PlayerCommand::Seek { position_ms: pos }) => {

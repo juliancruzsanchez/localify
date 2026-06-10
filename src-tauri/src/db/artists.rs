@@ -20,6 +20,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
          LEFT JOIN albums al ON al.artist_id = ar.id
          LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
          GROUP BY ar.id
+         HAVING album_count > 0
          ORDER BY ar.name_sort"
     )?;
 

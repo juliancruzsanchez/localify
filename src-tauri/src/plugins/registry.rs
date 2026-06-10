@@ -67,6 +67,7 @@ pub struct PluginPermissions {
 pub struct LoadedPlugin {
     pub manifest:     PluginManifest,
     pub audio_source: Option<Arc<dyn AudioSourcePlugin>>,
+    #[allow(dead_code)]
     pub library_hook: Option<Arc<dyn LibraryHookPlugin>>,
     pub player_hook:  Option<Arc<dyn PlayerHookPlugin>>,
     pub ipc_command:  Option<Arc<dyn IpcCommandPlugin>>,
@@ -106,6 +107,7 @@ impl PluginRegistry {
     // ── Capability accessors — clone Arcs before returning so callers
     //    never hold the registry lock across an async boundary.
 
+    #[allow(dead_code)]
     pub fn audio_sources(&self) -> Vec<Arc<dyn AudioSourcePlugin>> {
         self.plugins.read().unwrap()
             .values()
@@ -113,6 +115,7 @@ impl PluginRegistry {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn library_hooks(&self) -> Vec<Arc<dyn LibraryHookPlugin>> {
         self.plugins.read().unwrap()
             .values()

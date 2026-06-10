@@ -76,7 +76,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<SearchResults> {
                 al.year, al.artwork_hash, al.track_count, al.duration_secs
          FROM albums al
          JOIN artists ar ON al.artist_id = ar.id
-         WHERE al.title LIKE ?1 OR ar.name LIKE ?1
+         WHERE (al.title LIKE ?1 OR ar.name LIKE ?1) AND al.track_count > 0
          ORDER BY al.title_sort
          LIMIT 50"
     )?;
@@ -106,6 +106,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<SearchResults> {
          LEFT JOIN tracks t ON t.album_id = al.id AND t.removed_at IS NULL
          WHERE ar.name LIKE ?1
          GROUP BY ar.id
+         HAVING album_count > 0
          ORDER BY ar.name_sort
          LIMIT 50"
     )?;
@@ -125,7 +126,7 @@ pub fn search(conn: &Connection, query: &str) -> Result<SearchResults> {
     // Search playlists
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, p.description, p.cover_path,
-                COUNT(pt.id) as track_count,
+                COUNT(t.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
          FROM playlists p

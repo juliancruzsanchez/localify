@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::error::{AppError, Result};
 use crate::plugins::registry::PluginManifest;
 use crate::plugins::traits::{
-    AudioSourcePlugin, BrowseItemKind, IpcCommandPlugin, LibraryHookPlugin,
+    AudioSourcePlugin, IpcCommandPlugin, LibraryHookPlugin,
     PlayerHookPlugin, Plugin, PluginBrowseItem, PluginTrack, ResolvedStream,
 };
 
@@ -25,6 +25,7 @@ use crate::plugins::traits::{
 
 pub struct SubprocessPlugin {
     manifest: PluginManifest,
+    #[allow(dead_code)]
     child:    Arc<Mutex<Child>>,
     stdin:    Arc<Mutex<ChildStdin>>,
     reader:   Arc<Mutex<BufReader<std::process::ChildStdout>>>,
@@ -65,6 +66,7 @@ impl SubprocessPlugin {
 
     // ── Internal helpers ──────────────────────────────────────────────────
 
+    #[allow(dead_code)]
     fn call_blocking(&self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });

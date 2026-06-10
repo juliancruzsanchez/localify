@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import type { TrackSummary } from '../hooks/useLibrary';
-import { loadServerUrl } from '../hooks/useServer';
 
 const STATS_KEY = 'localify:stats:v1';
 const MAX_HISTORY = 5000;
@@ -22,8 +21,8 @@ interface StatsState {
 
   // Actions
   loadStats: () => Promise<void>;
-  recordPlay: (track: TrackSummary) => void;
-  finalizePlay: (trackId: string, listenedMs: number) => void;
+  recordPlay: (track: TrackSummary, baseUrl: string | null) => void;
+  finalizePlay: (trackId: string, listenedMs: number, baseUrl: string | null) => void;
 
   // Queries
   topTracks: (limit?: number) => Array<{ id: string; title: string; artist: string; count: number; ms: number }>;
@@ -78,7 +77,7 @@ export const useStatsStore = create<StatsState>((set, get) => ({
     }
   },
 
-  recordPlay: (track: TrackSummary) => {
+  recordPlay: (track: TrackSummary, baseUrl: string | null) => {
     const event: PlayEvent = {
       trackId: track.id,
       title:   track.title,
@@ -93,24 +92,21 @@ export const useStatsStore = create<StatsState>((set, get) => ({
     });
 
     // Fire-and-forget: report play to server for host-side AI/analytics tracking
-    loadServerUrl().then((baseUrl) => {
-      if (!baseUrl) return;
+    if (baseUrl) {
       fetch(`${baseUrl}/api/stats/record`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ track_id: track.id, source: 'mobile' }),
       }).catch(() => {});
-    });
+    }
   },
 
   // Call when the track ends or user switches tracks with elapsed time
-  finalizePlay: (trackId: string, listenedMs: number) => {
-    let playedAt = 0;
+  finalizePlay: (trackId: string, listenedMs: number, baseUrl: string | null) => {
     set((s) => {
       const history = [...s.history];
       for (let i = history.length - 1; i >= 0; i--) {
         if (history[i].trackId === trackId && history[i].listenedMs === 0) {
-          playedAt = history[i].playedAt;
           history[i] = { ...history[i], listenedMs };
           break;
         }
@@ -120,20 +116,17 @@ export const useStatsStore = create<StatsState>((set, get) => ({
     });
 
     // Update server with final listen duration for host-side AI/analytics
-    if (listenedMs > 0) {
-      loadServerUrl().then((baseUrl) => {
-        if (!baseUrl) return;
-        fetch(`${baseUrl}/api/stats/record`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            track_id: trackId,
-            listen_ms: listenedMs,
-            completed: listenedMs > 0,
-            source: 'mobile',
-          }),
-        }).catch(() => {});
-      });
+    if (listenedMs > 0 && baseUrl) {
+      fetch(`${baseUrl}/api/stats/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          track_id: trackId,
+          listen_ms: listenedMs,
+          completed: listenedMs > 0,
+          source: 'mobile',
+        }),
+      }).catch(() => {});
     }
   },
 

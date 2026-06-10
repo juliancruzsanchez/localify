@@ -33,6 +33,7 @@ pub struct TrackMetadata {
     pub title: String,
     pub artist: String,
     pub album_artist: Option<String>,
+    #[allow(dead_code)]
     pub album_title: Option<String>,
     pub track_number: Option<i32>,
     pub disc_number: Option<i32>,

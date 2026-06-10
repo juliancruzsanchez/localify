@@ -1,7 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NowPlayingBar } from '../components/NowPlayingBar';
 import { useColors } from '../constants/theme';
 import { useConnectionStore } from '../store/connectionStore';
 import { useDownloadStore } from '../store/downloadStore';
@@ -27,6 +31,18 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
+
+    // Configure audio for background playback. Needs the iOS `audio`
+    // UIBackgroundMode (set in app.json) to actually survive the app going
+    // background; without that, iOS pauses on backgrounding regardless.
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+    }).catch(() => {});
 
     useThemeStore.getState().loadTheme();
     loadStats();
@@ -55,15 +71,49 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Floating mini-player for full-screen pushed routes (album, artist, playlist,
+// stats). Tab screens render their own copy above the tab bar, and the
+// now-playing modal / connect screen shouldn't show it.
+function FloatingNowPlayingBar() {
+  const segments = useSegments();
+  const insets = useSafeAreaInsets();
+  const Colors = useColors();
+  const top = segments[0];
+  if (top === undefined || top === '(tabs)' || top === 'now-playing' || top === 'connect') {
+    return null;
+  }
+  // Pin flush to the bottom edge and pad for the home indicator so the bar's
+  // background extends all the way down rather than floating with a gap.
+  return (
+    <View
+      pointerEvents="box-none"
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        paddingBottom: insets.bottom,
+        backgroundColor: Colors.surfaceElevated,
+      }}
+    >
+      <NowPlayingBar />
+    </View>
+  );
+}
+
 function ThemedStack() {
   const Colors = useColors();
   return (
+    <View style={{ flex: 1 }}>
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: Colors.surface },
         headerTintColor: Colors.text,
         contentStyle: { backgroundColor: Colors.background },
         animation: 'slide_from_right',
+        // iOS otherwise labels the back button with the previous route's
+        // title, which is the "(tabs)" group name. Show just the chevron.
+        headerBackButtonDisplayMode: 'minimal',
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -89,6 +139,8 @@ function ThemedStack() {
         options={{ headerShown: false, animation: 'slide_from_bottom' }}
       />
     </Stack>
+      <FloatingNowPlayingBar />
+    </View>
   );
 }
 

@@ -28,7 +28,7 @@ pub struct PlaylistTrack {
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, p.description, p.cover_path,
-                COUNT(pt.id) as track_count,
+                COUNT(t.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
          FROM playlists p
@@ -58,7 +58,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 pub fn get_playlist_by_id(conn: &Connection, id: &str) -> Result<Playlist> {
     conn.query_row(
         "SELECT p.id, p.name, p.description, p.cover_path,
-                COUNT(pt.id) as track_count,
+                COUNT(t.id) as track_count,
                 COALESCE(SUM(t.duration_secs), 0) as duration_secs,
                 p.created_at, p.updated_at
          FROM playlists p

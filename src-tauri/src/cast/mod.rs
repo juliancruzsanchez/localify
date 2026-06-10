@@ -671,6 +671,7 @@ async fn api_albums(
             "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
              FROM albums al
              JOIN artists ar ON ar.id = al.artist_id
+             WHERE al.track_count > 0
              ORDER BY al.title_sort",
         ) {
             Ok(s) => s,
@@ -784,6 +785,7 @@ async fn api_artists(
              LEFT JOIN albums al ON al.artist_id = ar.id
              LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
              GROUP BY ar.id
+             HAVING album_count > 0
              ORDER BY ar.name_sort",
         ) {
             Ok(s) => s,
@@ -840,7 +842,7 @@ async fn api_artist(
                 al.artist_id, al.year, al.track_count
          FROM albums al
          LEFT JOIN artists ar ON ar.id = al.artist_id
-         WHERE al.artist_id = ?1
+         WHERE al.artist_id = ?1 AND al.track_count > 0
          ORDER BY al.year DESC, al.title_sort",
     ) {
         Ok(s) => s,
@@ -882,9 +884,10 @@ async fn api_playlists(
     let playlists: Result<Vec<PlaylistSummary>, _> = {
         let conn = state.db.lock().unwrap();
         let mut stmt = match conn.prepare(
-            "SELECT p.id, p.name, COUNT(pt.id) as track_count
+            "SELECT p.id, p.name, COUNT(t.id) as track_count
              FROM playlists p
              LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+             LEFT JOIN tracks t ON t.id = pt.track_id AND t.removed_at IS NULL
              GROUP BY p.id
              ORDER BY p.name COLLATE NOCASE",
         ) {
@@ -973,9 +976,10 @@ async fn api_playlist(
     let conn = state.db.lock().unwrap();
 
     let summary = conn.query_row(
-        "SELECT p.id, p.name, COUNT(pt.id) as track_count
+        "SELECT p.id, p.name, COUNT(t.id) as track_count
          FROM playlists p
          LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+         LEFT JOIN tracks t ON t.id = pt.track_id AND t.removed_at IS NULL
          WHERE p.id = ?1
          GROUP BY p.id",
         params![playlist_id],
@@ -1070,7 +1074,7 @@ async fn api_search(
             "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
              FROM albums al
              JOIN artists ar ON ar.id = al.artist_id
-             WHERE al.title LIKE ?1 OR ar.name LIKE ?1
+             WHERE (al.title LIKE ?1 OR ar.name LIKE ?1) AND al.track_count > 0
              ORDER BY al.title_sort
              LIMIT 20",
         ) {
@@ -1102,6 +1106,7 @@ async fn api_search(
              LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
              WHERE ar.name LIKE ?1
              GROUP BY ar.id
+             HAVING album_count > 0
              ORDER BY ar.name_sort
              LIMIT 20",
         ) {
@@ -1405,6 +1410,7 @@ async fn api_library(
             "SELECT al.id, al.title, ar.name, al.artist_id, al.year, al.track_count
              FROM albums al
              JOIN artists ar ON ar.id = al.artist_id
+             WHERE al.track_count > 0
              ORDER BY al.title_sort",
         ) {
             Ok(s) => s,
@@ -1434,6 +1440,7 @@ async fn api_library(
              LEFT JOIN albums al ON al.artist_id = ar.id
              LEFT JOIN tracks t ON t.artist_id = ar.id AND t.removed_at IS NULL
              GROUP BY ar.id
+             HAVING album_count > 0
              ORDER BY ar.name_sort",
         ) {
             Ok(s) => s,
@@ -1454,9 +1461,10 @@ async fn api_library(
 
     let mut playlists: Vec<PlaylistSummary> = {
         let mut stmt = match conn.prepare(
-            "SELECT p.id, p.name, COUNT(pt.id) as track_count
+            "SELECT p.id, p.name, COUNT(t.id) as track_count
              FROM playlists p
              LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+             LEFT JOIN tracks t ON t.id = pt.track_id AND t.removed_at IS NULL
              GROUP BY p.id
              ORDER BY p.name COLLATE NOCASE",
         ) {

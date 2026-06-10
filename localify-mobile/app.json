@@ -12,13 +12,21 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.localify.mobile"
+      "bundleIdentifier": "com.localify.mobile",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#121212"
       },
-      "package": "com.localify.mobile"
+      "package": "com.localify.mobile",
+      "permissions": [
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "plugins": ["expo-router", "expo-av"]
   }

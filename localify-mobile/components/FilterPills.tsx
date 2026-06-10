@@ -16,11 +16,16 @@ interface Props {
 function useStyles() {
   const Colors = useColors();
   return useMemo(() => StyleSheet.create({
+    scroll: {
+      flexGrow: 0,
+      flexShrink: 0,
+    },
     container: {
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm,
       gap: Spacing.sm,
       flexDirection: 'row',
+      alignItems: 'center',
     },
     pill: {
       paddingHorizontal: Spacing.md,
@@ -54,6 +59,7 @@ export function FilterPills({ pills, selected, onSelect }: Props) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={styles.scroll}
       contentContainerStyle={styles.container}
     >
       {pills.map((pill) => {

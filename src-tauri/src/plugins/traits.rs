@@ -7,6 +7,7 @@ use crate::error::Result;
 /// Base trait every backend plugin must implement.
 /// All methods take `&self` — implementations use internal mutability (Mutex) for state.
 #[async_trait]
+#[allow(dead_code)]
 pub trait Plugin: Send + Sync {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
@@ -59,6 +60,7 @@ pub struct ResolvedStream {
 
 /// A browsable/searchable external audio source (e.g., YouTube via yt-dlp, DLNA).
 #[async_trait]
+#[allow(dead_code)]
 pub trait AudioSourcePlugin: Plugin {
     fn source_label(&self) -> &str;
     fn source_icon_svg(&self) -> Option<&str> { None }
@@ -73,6 +75,7 @@ pub trait AudioSourcePlugin: Plugin {
 
 /// Hooks into the library scanner lifecycle. All methods have default no-op impls.
 #[async_trait]
+#[allow(dead_code)]
 pub trait LibraryHookPlugin: Plugin {
     async fn on_scan_started(&self, _paths: &[String]) -> Result<()> { Ok(()) }
     async fn on_scan_progress(&self, _scanned: u32, _total: u32) -> Result<()> { Ok(()) }
@@ -85,6 +88,7 @@ pub trait LibraryHookPlugin: Plugin {
 
 /// Hooks into player state transitions. All methods have default no-op impls.
 #[async_trait]
+#[allow(dead_code)]
 pub trait PlayerHookPlugin: Plugin {
     async fn on_play(&self, _track_id: &str, _position_ms: u64) -> Result<()> { Ok(()) }
     async fn on_pause(&self, _track_id: &str, _position_ms: u64) -> Result<()> { Ok(()) }
@@ -99,6 +103,7 @@ pub trait PlayerHookPlugin: Plugin {
 /// Lets a plugin expose custom IPC commands to the frontend.
 /// The host proxies `plugin_dispatch(plugin_id, method, params)` calls here.
 #[async_trait]
+#[allow(dead_code)]
 pub trait IpcCommandPlugin: Plugin {
     fn command_names(&self) -> Vec<String>;
     async fn dispatch(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value>;

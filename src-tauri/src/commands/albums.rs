@@ -1,5 +1,5 @@
 use tauri::State;
-use crate::db::albums::{Album, get_all_albums, get_album_by_id, get_albums_by_artist};
+use crate::db::albums::{Album, get_all_albums, get_album_by_id};
 use crate::db::tracks::{Track, get_tracks_by_album};
 use crate::error::Result;
 use crate::state::AppState;

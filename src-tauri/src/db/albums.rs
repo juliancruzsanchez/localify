@@ -20,6 +20,7 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
                 al.year, al.artwork_hash, al.track_count, al.duration_secs
          FROM albums al
          JOIN artists ar ON al.artist_id = ar.id
+         WHERE al.track_count > 0
          ORDER BY al.title_sort"
     )?;
 
@@ -73,7 +74,7 @@ pub fn get_albums_by_artist(conn: &Connection, artist_id: &str) -> Result<Vec<Al
                 al.year, al.artwork_hash, al.track_count, al.duration_secs
          FROM albums al
          JOIN artists ar ON al.artist_id = ar.id
-         WHERE al.artist_id = ?1
+         WHERE al.artist_id = ?1 AND al.track_count > 0
          ORDER BY al.year DESC, al.title_sort"
     )?;
 

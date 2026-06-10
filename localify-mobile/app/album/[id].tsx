@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo } from 'react';
@@ -92,11 +93,6 @@ function useStyles() {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    playIcon: {
-      color: Colors.background,
-      fontSize: FontSize.xl,
-      marginLeft: 3,
-    },
     trackList: {
       marginTop: Spacing.sm,
     },
@@ -184,7 +180,12 @@ export default function AlbumDetailScreen() {
           onPress={isCurrentAlbumPlaying ? () => togglePlayPause() : handlePlayAll}
           activeOpacity={0.8}
         >
-          <Text style={styles.playIcon}>{isCurrentAlbumPlaying ? '⏸' : '▶'}</Text>
+          <Ionicons
+            name={isCurrentAlbumPlaying ? 'pause' : 'play'}
+            size={26}
+            color={Colors.background}
+            style={{ marginLeft: isCurrentAlbumPlaying ? 0 : 3 }}
+          />
         </TouchableOpacity>
       </View>
 

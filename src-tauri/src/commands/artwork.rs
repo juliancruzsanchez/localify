@@ -38,7 +38,7 @@ pub async fn get_artwork_data_url(
 /// the Tauri asset protocol (which has scope/permission issues in v2).
 #[tauri::command]
 pub async fn get_cover_image(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     cover_path: String,
 ) -> Result<String> {
     let bytes = fs::read(&cover_path)
