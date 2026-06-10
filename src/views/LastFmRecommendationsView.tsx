@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { Radio, Download, Play, CheckCircle, AlertCircle, Loader2, ExternalLink, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLastFmSession, useLastFmRecommendations } from "@/queries/lastfm";
 import { useYtdlpStatus, useYtdlpInstall, type YtdlpSearchResult } from "@/queries/ytdlp";
 import { usePlayerStore } from "@/store/playerStore";
@@ -9,6 +9,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import type { LastFmRecArtist, LastFmRecTrack, Track } from "@/types";
+
+/** Round-robin flatten: one track from each artist before going back for
+ *  seconds, so the resulting list stays diverse. */
+function flattenRecommendations(artists: LastFmRecArtist[], limit: number): LastFmRecTrack[] {
+  const out: LastFmRecTrack[] = [];
+  const maxIdx = artists.reduce((m, a) => Math.max(m, a.top_tracks.length), 0);
+  for (let i = 0; i < maxIdx; i++) {
+    for (const a of artists) {
+      if (out.length >= limit) return out;
+      const t = a.top_tracks[i];
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
 
 // ─── Download button: search YouTube → download via yt-dlp ───────────────────
 
@@ -246,6 +261,11 @@ export function LastFmRecommendationsView() {
 
   const handleInstall = () => install();
 
+  const flatSongs = useMemo(
+    () => (recs ? flattenRecommendations(recs.artists, 15) : []),
+    [recs],
+  );
+
   if (!session) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
@@ -349,6 +369,27 @@ export function LastFmRecommendationsView() {
             <span className="flex-shrink-0 text-xs text-green-400">Installed ✓</span>
           )}
         </div>
+      )}
+
+      {/* Recommended songs (flat list) */}
+      {flatSongs.length > 0 && (
+        <section className="px-6 pb-8">
+          <h2 className="text-lg font-semibold text-white mb-3">Recommended Songs</h2>
+          <div
+            className="rounded-xl overflow-hidden border border-[var(--color-border)] py-1"
+            style={{ background: "var(--color-surface-elevated)" }}
+          >
+            {flatSongs.map((track) => (
+              <RecTrackRow
+                key={`flat-${track.artist}-${track.title}`}
+                track={track}
+                allTracks={allTracks}
+                ytReady={ytReady}
+                onInstall={handleInstall}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Artist recommendation grid */}

@@ -1,11 +1,12 @@
 import { useNavigate } from "react-router";
 import { Play, Music, Disc3, Mic2 } from "lucide-react";
-import { Children } from "react";
+import { Children, useMemo } from "react";
 import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { useRecentlyPlayedQuery, useGenreMixesQuery, type RecentItem, type GenreMix } from "@/queries/home";
 import { useAlbumsQuery } from "@/queries/albums";
 import { useArtistsQuery } from "@/queries/artists";
 import { useTracksQuery } from "@/queries/tracks";
+import { useRecommendedSongs } from "@/queries/recommendations";
 import { usePlayerStore } from "@/store/playerStore";
 import { EmptyLibrary } from "@/components/library/EmptyLibrary";
 import { toAssetUrl } from "@/lib/assetUrl";
@@ -285,6 +286,24 @@ export function HomeView() {
   const { data: allAlbums = [] }  = useAlbumsQuery();
   const { data: allArtists = [] } = useArtistsQuery();
   const { data: genreMixes = [] } = useGenreMixesQuery();
+  const { songs: recSongs, source: recSource } = useRecommendedSongs(20);
+
+  // Resolve recommendations to playable library tracks. Last.fm recs that
+  // aren't in the library (library_track_id === null) are skipped here —
+  // they show up on the dedicated /lastfm/recommendations view where the
+  // download UI lives.
+  const recommendedTracks = useMemo<Track[]>(() => {
+    if (tracks.length === 0 || recSongs.length === 0) return [];
+    const byId = new Map(tracks.map((t) => [t.id, t]));
+    const out: Track[] = [];
+    for (const s of recSongs) {
+      if (!s.library_track_id) continue;
+      const t = byId.get(s.library_track_id);
+      if (t) out.push(t);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [recSongs, tracks]);
 
   if (tracksLoading) {
     return (
@@ -346,6 +365,21 @@ export function HomeView() {
           <HorizontalRow>
             {mostPlayed.map((track) => (
               <MostPlayedCard key={track.id} track={track} queue={mostPlayed} />
+            ))}
+          </HorizontalRow>
+        </section>
+      )}
+
+      {/* ── Recommended for You ───────────────────────────────────────────── */}
+      {recommendedTracks.length > 0 && (
+        <section className="px-8 pb-8">
+          <SectionHeader
+            title="Recommended for You"
+            onShowAll={recSource === "lastfm" ? () => navigate("/lastfm/recommendations") : undefined}
+          />
+          <HorizontalRow>
+            {recommendedTracks.map((track) => (
+              <MostPlayedCard key={track.id} track={track} queue={recommendedTracks} />
             ))}
           </HorizontalRow>
         </section>
