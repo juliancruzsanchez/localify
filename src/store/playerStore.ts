@@ -55,29 +55,23 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   playTrack: async (track, queue = [], index = 0) => {
     const { castSession } = get();
+    // Reset UI state up front so the seek bar (and title/duration) snap to
+    // the new track immediately, rather than briefly showing the previous
+    // track's position while the play_track invoke is in flight.
+    set({
+      currentTrack: track,
+      queue: queue.length > 0 ? queue : [track],
+      queueIndex: index,
+      isPlaying: true,
+      positionMs: 0,
+      durationMs: Math.round(track.duration_secs * 1000),
+      _lastPlayStartedAt: Date.now(),
+    });
     try {
       if (castSession) {
         await invoke("cast_track", { trackId: track.id, deviceName: castSession.deviceName, positionMs: 0 });
-        set({
-          currentTrack: track,
-          queue: queue.length > 0 ? queue : [track],
-          queueIndex: index,
-          isPlaying: true,
-          positionMs: 0,
-          durationMs: Math.round(track.duration_secs * 1000),
-          _lastPlayStartedAt: Date.now(),
-        });
       } else {
         await invoke("play_track", { trackId: track.id, startMs: null });
-        set({
-          currentTrack: track,
-          queue: queue.length > 0 ? queue : [track],
-          queueIndex: index,
-          isPlaying: true,
-          positionMs: 0,
-          durationMs: Math.round(track.duration_secs * 1000),
-          _lastPlayStartedAt: Date.now(),
-        });
       }
     } catch (e) {
       console.error("play_track failed:", e);

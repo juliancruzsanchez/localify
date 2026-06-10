@@ -14,11 +14,14 @@ import {
 } from 'react-native';
 import { DownloadButton } from '../../components/DownloadButton';
 import { FilterPills, Pill } from '../../components/FilterPills';
+import { SortMenuModal, type SortOption } from '../../components/SortMenuModal';
 import { useColors, FontSize, Radius, Spacing } from '../../constants/theme';
 import { artworkUrl, useLibrarySnapshot } from '../../hooks/useLibrary';
 import { useServer } from '../../hooks/useServer';
+import { useSortPref, type SortPref } from '../../hooks/useSortPref';
 import { useDownloadStore } from '../../store/downloadStore';
 import { usePlayerStore } from '../../store/playerStore';
+import { useStatsStore } from '../../store/statsStore';
 import type { AlbumSummary, ArtistSummary, PlaylistSummary, TrackSummary } from '../../hooks/useLibrary';
 
 const PILLS: Pill[] = [
@@ -32,6 +35,68 @@ const PILLS: Pill[] = [
 
 type FilterId = 'all' | 'playlists' | 'albums' | 'artists' | 'songs' | 'downloads';
 type ViewMode = 'list' | 'grid';
+
+// ── Sort keys per filter ──────────────────────────────────────────────────────
+
+type SortKey = 'name' | 'creator' | 'recent';
+
+const SORT_OPTIONS_BY_FILTER: Record<FilterId, SortOption<SortKey>[]> = {
+  all:       [{ key: 'name', label: 'A–Z' }, { key: 'recent', label: 'Recently played' }],
+  playlists: [{ key: 'name', label: 'A–Z' }, { key: 'recent', label: 'Recently played' }],
+  albums:    [{ key: 'name', label: 'A–Z' }, { key: 'creator', label: 'Creator' }, { key: 'recent', label: 'Recently played' }],
+  artists:   [{ key: 'name', label: 'A–Z' }, { key: 'recent', label: 'Recently played' }],
+  songs:     [{ key: 'name', label: 'A–Z' }, { key: 'creator', label: 'Creator' }, { key: 'recent', label: 'Recently played' }],
+  downloads: [{ key: 'name', label: 'A–Z' }, { key: 'creator', label: 'Creator' }, { key: 'recent', label: 'Recently played' }],
+};
+
+const SORT_LABEL: Record<SortKey, string> = {
+  name:    'A–Z',
+  creator: 'Creator',
+  recent:  'Recents',
+};
+
+function cmpStr(a: string, b: string) {
+  return a.localeCompare(b, undefined, { sensitivity: 'base' });
+}
+
+function applyDir<T>(cmp: (a: T, b: T) => number, dir: 'asc' | 'desc'): (a: T, b: T) => number {
+  return dir === 'asc' ? cmp : (a, b) => -cmp(a, b);
+}
+
+function sortPlaylists(list: PlaylistSummary[], pref: SortPref<SortKey>) {
+  // Playlists have no creator/recency on this client — fall back to name.
+  return [...list].sort(applyDir((a, b) => cmpStr(a.name, b.name), pref.dir));
+}
+
+function sortAlbums(list: AlbumSummary[], pref: SortPref<SortKey>, lastPlayedFor: (id: string) => number) {
+  return [...list].sort(applyDir((a, b) => {
+    switch (pref.key) {
+      case 'name':    return cmpStr(a.title, b.title);
+      case 'creator': return cmpStr(a.artist, b.artist) || cmpStr(a.title, b.title);
+      case 'recent':  return lastPlayedFor(b.id) - lastPlayedFor(a.id);
+    }
+  }, pref.dir));
+}
+
+function sortArtists(list: ArtistSummary[], pref: SortPref<SortKey>, lastPlayedFor: (id: string) => number) {
+  return [...list].sort(applyDir((a, b) => {
+    switch (pref.key) {
+      case 'name':    return cmpStr(a.name, b.name);
+      case 'creator': return cmpStr(a.name, b.name);
+      case 'recent':  return lastPlayedFor(b.id) - lastPlayedFor(a.id);
+    }
+  }, pref.dir));
+}
+
+function sortSongs(list: TrackSummary[], pref: SortPref<SortKey>, lastPlayedFor: (id: string) => number) {
+  return [...list].sort(applyDir((a, b) => {
+    switch (pref.key) {
+      case 'name':    return cmpStr(a.title, b.title);
+      case 'creator': return cmpStr(a.artist, b.artist) || cmpStr(a.title, b.title);
+      case 'recent':  return lastPlayedFor(b.id) - lastPlayedFor(a.id);
+    }
+  }, pref.dir));
+}
 
 const GRID_COLS = 3;
 const GRID_PADDING = Spacing.sm;
@@ -213,16 +278,69 @@ export default function LibraryScreen() {
   const { baseUrl } = useServer();
   const [filter, setFilter] = useState<FilterId>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [sortModalOpen, setSortModalOpen] = useState(false);
   const downloads = useDownloadStore((s) => s.downloads);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const downloadedTracks = Object.values(downloads).map((d) => d.metadata);
+  const statsHistory = useStatsStore((s) => s.history);
 
   const { data: snapshot, isLoading } = useLibrarySnapshot();
 
   const playlists = snapshot?.playlists ?? [];
-  const albums    = snapshot?.albums    ?? [];
-  const artists   = snapshot?.artists   ?? [];
-  const songs     = snapshot?.tracks    ?? [];
+  const albumsRaw  = snapshot?.albums    ?? [];
+  const artistsRaw = snapshot?.artists   ?? [];
+  const songsRaw   = snapshot?.tracks    ?? [];
+
+  // ── Sort preference (one persisted pref per filter scope) ───────────────────
+  const sortPref = useSortPref<SortKey>(
+    `mobile-library.${filter}`,
+    { key: filter === 'all' ? 'recent' : 'name', dir: filter === 'all' || filter === 'songs' ? 'desc' : 'asc' },
+    (k) => (k === 'recent' ? 'desc' : 'asc'),
+  );
+
+  // ── Recency maps (max play timestamp per track/album/artist) ────────────────
+  const lastPlayedByTrack = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of statsHistory) {
+      const cur = m.get(e.trackId) ?? 0;
+      if (e.playedAt > cur) m.set(e.trackId, e.playedAt);
+    }
+    return m;
+  }, [statsHistory]);
+
+  const lastPlayedByAlbum = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of songsRaw) {
+      const ts = lastPlayedByTrack.get(t.id) ?? 0;
+      if (ts <= 0 || !t.album_id) continue;
+      const cur = m.get(t.album_id) ?? 0;
+      if (ts > cur) m.set(t.album_id, ts);
+    }
+    return m;
+  }, [songsRaw, lastPlayedByTrack]);
+
+  const lastPlayedByArtist = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of songsRaw) {
+      const ts = lastPlayedByTrack.get(t.id) ?? 0;
+      if (ts <= 0 || !t.artist_id) continue;
+      const cur = m.get(t.artist_id) ?? 0;
+      if (ts > cur) m.set(t.artist_id, ts);
+    }
+    return m;
+  }, [songsRaw, lastPlayedByTrack]);
+
+  const albums  = useMemo(() => sortAlbums(albumsRaw,   sortPref.pref, (id) => lastPlayedByAlbum.get(id) ?? 0),  [albumsRaw,   sortPref.pref, lastPlayedByAlbum]);
+  const artists = useMemo(() => sortArtists(artistsRaw, sortPref.pref, (id) => lastPlayedByArtist.get(id) ?? 0), [artistsRaw,  sortPref.pref, lastPlayedByArtist]);
+  const songs   = useMemo(() => sortSongs(songsRaw,     sortPref.pref, (id) => lastPlayedByTrack.get(id)  ?? 0), [songsRaw,    sortPref.pref, lastPlayedByTrack]);
+  const sortedPlaylists = useMemo(() => sortPlaylists(playlists, sortPref.pref), [playlists, sortPref.pref]);
+  const sortedDownloads = useMemo(
+    () => sortSongs(downloadedTracks, sortPref.pref, (id) => lastPlayedByTrack.get(id) ?? 0),
+    [downloadedTracks, sortPref.pref, lastPlayedByTrack],
+  );
+
+  const sortOptions = SORT_OPTIONS_BY_FILTER[filter];
+  const activeSortLabel = SORT_LABEL[sortPref.pref.key];
 
   const showLoading = isLoading && filter !== 'downloads';
   const canGrid = filter === 'albums' || filter === 'all';
@@ -361,12 +479,12 @@ export default function LibraryScreen() {
   }
 
   function listData(): Array<{ type: string; item: PlaylistSummary | AlbumSummary | ArtistSummary | TrackSummary }> {
-    if (filter === 'downloads') return downloadedTracks.map((item) => ({ type: 'download', item }));
+    if (filter === 'downloads') return sortedDownloads.map((item) => ({ type: 'download', item }));
     if (filter === 'albums')    return albums.map((item) => ({ type: 'album', item }));
     if (filter === 'artists')   return artists.map((item) => ({ type: 'artist', item }));
     if (filter === 'songs')     return songs.map((item) => ({ type: 'song', item }));
 
-    const playlistItems = playlists.map((item) => ({ type: 'playlist', item }));
+    const playlistItems = sortedPlaylists.map((item) => ({ type: 'playlist', item }));
     if (filter === 'playlists') return playlistItems;
 
     const albumItems = albums.map((item) => ({ type: 'album', item }));
@@ -405,9 +523,18 @@ export default function LibraryScreen() {
 
       {/* Sort row */}
       <View style={styles.sortRow}>
-        <TouchableOpacity style={styles.sortBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.sortBtn}
+          activeOpacity={0.7}
+          onPress={() => setSortModalOpen(true)}
+        >
           <Ionicons name="swap-vertical" size={16} color={Colors.text} />
-          <Text style={styles.sortText}>Recents</Text>
+          <Text style={styles.sortText}>{activeSortLabel}</Text>
+          <Ionicons
+            name={sortPref.pref.dir === 'asc' ? 'arrow-up' : 'arrow-down'}
+            size={12}
+            color={Colors.textMuted}
+          />
         </TouchableOpacity>
         {canGrid && (
           <TouchableOpacity
@@ -470,6 +597,14 @@ export default function LibraryScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <SortMenuModal
+        visible={sortModalOpen}
+        options={sortOptions}
+        pref={sortPref.pref}
+        onToggle={sortPref.toggle}
+        onClose={() => setSortModalOpen(false)}
+      />
     </View>
   );
 }

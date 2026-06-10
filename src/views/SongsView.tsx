@@ -8,6 +8,33 @@ import { useArtworkUrl } from "@/hooks/useArtworkUrl";
 import { toAssetUrl } from "@/lib/assetUrl";
 import { formatTime } from "@/lib/formatTime";
 import { cn } from "@/lib/utils";
+import { SortMenu, type SortOption } from "@/components/library/SortMenu";
+import { useSortPref, type SortPref } from "@/hooks/useSortPref";
+import type { Track } from "@/types";
+
+type SongSortKey = "title" | "artist" | "recent";
+
+const SONG_SORT_OPTIONS: SortOption<SongSortKey>[] = [
+  { key: "title",  label: "A–Z" },
+  { key: "artist", label: "Creator" },
+  { key: "recent", label: "Recently played" },
+];
+
+function sortTracks(list: Track[], pref: SortPref<SongSortKey>): Track[] {
+  const cmpStr = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+  const dirMul = pref.dir === "asc" ? 1 : -1;
+  return [...list].sort((a, b) => {
+    switch (pref.key) {
+      case "title":  return cmpStr(a.title, b.title) * dirMul;
+      case "artist": return (cmpStr(a.artist, b.artist) || cmpStr(a.title, b.title)) * dirMul;
+      case "recent": {
+        const at = a.last_played_at ?? 0;
+        const bt = b.last_played_at ?? 0;
+        return (bt - at) * (pref.dir === "desc" ? 1 : -1);
+      }
+    }
+  });
+}
 import {
   useYtdlpStatus,
   useYtdlpInstall,
@@ -179,12 +206,23 @@ export function SongsView() {
 
   const [activeGenre, setActiveGenre] = useState<string | undefined>(urlGenre ?? undefined);
 
-  const tracks = useMemo(() => {
+  const { pref: sortPref, toggle: toggleSort } = useSortPref<SongSortKey>(
+    "songs",
+    { key: "title", dir: "asc" },
+    (k) => (k === "recent" ? "desc" : "asc"),
+  );
+
+  const filteredTracks = useMemo(() => {
     if (!activeGenre) return allTracks;
     return allTracks.filter(
       (t) => t.genre?.toLowerCase() === activeGenre.toLowerCase(),
     );
   }, [allTracks, activeGenre]);
+
+  const tracks = useMemo(
+    () => sortTracks(filteredTracks, sortPref),
+    [filteredTracks, sortPref],
+  );
 
   const firstWithArtwork = useMemo(
     () => tracks.find((t) => t.artwork_hash),
@@ -279,9 +317,12 @@ export function SongsView() {
         <>
           <div className="flex items-center justify-between px-8 py-6 flex-shrink-0">
             <h1 className="text-3xl font-bold text-white">Songs</h1>
-            <span className="text-[var(--color-text-muted)] text-sm">
-              {tracks.length} tracks
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-[var(--color-text-muted)] text-sm">
+                {tracks.length} tracks
+              </span>
+              <SortMenu options={SONG_SORT_OPTIONS} pref={sortPref} onToggle={toggleSort} />
+            </div>
           </div>
         </>
       )}
